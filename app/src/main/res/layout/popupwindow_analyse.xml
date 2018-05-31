@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#aa000000">
+
+	<LinearLayout
+		android:id="@+id/show_status"
+		android:orientation="horizontal"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginLeft="20dp"
+		android:layout_marginRight="20dp"
+		android:layout_marginTop="20dp"
+		android:paddingLeft="10dp"
+		android:paddingRight="10dp"
+		android:background="@color/more_half_transparent_white">
+
+		<TextView
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:text="显示类型"
+			android:textSize="12sp"/>
+		<TextView
+			android:id="@+id/text_sum"
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:text="(0):"
+			android:textSize="12sp"/>
+
+		<CheckBox
+			android:id="@+id/check_normal"
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:scaleX="0.8"
+			android:scaleY="0.8"
+			android:text="正常"
+			android:checked="true"/>
+
+		<CheckBox
+			android:id="@+id/check_loss"
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:scaleX="0.8"
+			android:scaleY="0.8"
+			android:text="丢包"
+			android:checked="true"/>
+
+		<CheckBox
+			android:id="@+id/check_disorder"
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:scaleX="0.8"
+			android:scaleY="0.8"
+			android:text="乱序"
+			android:checked="true"/>
+
+	</LinearLayout>
+
+	<LinearLayout
+		android:id="@+id/title"
+		android:orientation="horizontal"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_below="@id/show_status"
+		android:layout_marginLeft="20dp"
+		android:layout_marginRight="20dp">
+		<TextView
+			android:id="@+id/frame"
+			android:layout_width="0px"
+			android:layout_height="wrap_content"
+			android:layout_weight="2"
+			android:gravity="center"
+			android:text="frame"
+			android:textColor="@color/customBlue"
+			android:background="@color/more_half_transparent_white"/>
+
+		<TextView
+			android:id="@+id/seq"
+			android:layout_width="0px"
+			android:layout_height="wrap_content"
+			android:layout_weight="2"
+			android:gravity="center"
+			android:text="seq"
+			android:textColor="@color/customBlue"
+			android:background="@color/more_half_transparent_white"/>
+
+		<TextView
+			android:id="@+id/timestamp"
+			android:layout_width="0px"
+			android:layout_height="wrap_content"
+			android:layout_weight="3"
+			android:gravity="center"
+			android:text="timestamp"
+			android:textColor="@color/customBlue"
+			android:background="@color/more_half_transparent_white"/>
+
+		<TextView
+			android:id="@+id/status"
+			android:layout_width="0px"
+			android:layout_height="wrap_content"
+			android:layout_weight="2"
+			android:gravity="center"
+			android:text="status"
+			android:textColor="@color/customBlue"
+			android:background="@color/more_half_transparent_white"/>
+
+	</LinearLayout>
+	<android.support.v7.widget.RecyclerView
+		android:id="@+id/recyclerView"
+		android:layout_width="match_parent"
+		android:layout_height="match_parent"
+		android:layout_below="@id/title"
+		android:layout_marginLeft="20dp"
+		android:layout_marginRight="20dp"
+		android:layout_marginBottom="20dp"
+		android:scrollbars="vertical"/>
+
+</RelativeLayout>

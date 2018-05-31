@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+	android:id="@+id/title"
+	android:orientation="vertical"
+	android:layout_width="match_parent"
+	android:layout_height="wrap_content"
+	android:layout_marginTop="20dp"
+	android:layout_marginLeft="20dp"
+	android:layout_marginRight="20dp"
+	android:layout_centerInParent="true"
+	android:gravity="center_vertical"
+	android:background="@color/white">
+
+	<requestFocus/>
+	<TextView
+		android:layout_width="wrap_content"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="10dp"
+		android:layout_marginLeft="20dp"
+		android:layout_marginBottom="3dp"
+		android:text="AMR Setting"
+		android:background="@color/listItem_white"/>
+
+
+	<LinearLayout
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginLeft="20dp"
+		android:layout_marginRight="20dp"
+		android:gravity="center_vertical"
+		android:paddingLeft="10dp"
+		android:paddingRight="10dp"
+		android:background="@drawable/shape_url">
+		<TextView
+			android:layout_width="0px"
+			android:layout_height="wrap_content"
+			android:layout_weight="10"
+			android:text="payload type"
+			android:textSize="14sp"
+			android:textColor="@color/customBlue"/>
+		<EditText
+			android:id="@+id/amr_type_num"
+			android:layout_width="0px"
+			android:layout_height="wrap_content"
+			android:layout_weight="5"
+			android:text="126"
+			android:inputType="number"
+			android:minHeight="45dp"
+			android:textSize="14sp" />
+
+		<View
+			android:layout_width="0px"
+			android:layout_height="0px"
+			android:layout_weight="3"/>
+
+		<TextView
+			android:layout_width="0px"
+			android:layout_height="wrap_content"
+			android:layout_weight="5"
+			android:text="ptime"
+			android:textSize="14sp"
+			android:textColor="@color/customBlue"/>
+		<EditText
+			android:id="@+id/amr_ptime"
+			android:layout_width="0px"
+			android:layout_height="wrap_content"
+			android:layout_weight="5"
+			android:text="20"
+			android:inputType="number"
+			android:minHeight="45dp"
+			android:textSize="14sp" />
+	</LinearLayout>
+
+	<TextView
+		android:layout_width="wrap_content"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="15dp"
+		android:layout_marginLeft="20dp"
+		android:layout_marginBottom="3dp"
+		android:text="NVOC Setting"
+		android:background="@color/listItem_white"/>
+
+	<LinearLayout
+		android:layout_width="wrap_content"
+		android:layout_height="wrap_content"
+		android:orientation="vertical"
+		android:paddingLeft="10dp"
+		android:paddingRight="10dp"
+		android:layout_marginLeft="20dp"
+		android:layout_marginRight="20dp"
+		android:background="@drawable/shape_url">
+		<LinearLayout
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:gravity="center_vertical">
+			<TextView
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="10"
+				android:text="payload type"
+				android:textSize="14sp"
+				android:textColor="@color/customBlue"/>
+
+			<EditText
+				android:id="@+id/nvoc_type_num"
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="5"
+				android:text="93"
+				android:inputType="number"
+				android:minHeight="45dp"
+				android:textSize="14sp" />
+
+			<View
+				android:layout_width="0px"
+				android:layout_height="0px"
+				android:layout_weight="3"/>
+
+			<TextView
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="5"
+				android:text="ptime"
+				android:textSize="14sp"
+				android:textColor="@color/customBlue"/>
+			<EditText
+				android:id="@+id/nvoc_ptime"
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="5"
+				android:text="60"
+				android:inputType="number"
+				android:minHeight="45dp"
+				android:textSize="14sp" />
+		</LinearLayout>
+
+		<RadioGroup
+			android:id="@+id/nvoc_max_kbps"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:layout_marginTop="5dp"
+			android:layout_marginBottom="5dp"
+			android:gravity="center_vertical"
+			android:orientation="horizontal">
+
+			<TextView
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="6"
+				android:layout_marginRight="10dp"
+				android:text="max-kbps"
+				android:textSize="14sp"
+				android:textColor="@color/customBlue"/>
+
+			<RadioButton
+				android:id="@+id/nvoc_max_kbps_2_4"
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="7"
+				android:text="2.4kb/s"
+				android:textSize="14sp"
+				android:checked="true"/>
+
+			<RadioButton
+				android:id="@+id/nvoc_max_kbps_2_2"
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="7"
+				android:text="2.2kb/s"
+				android:textSize="14sp"/>
+		</RadioGroup>
+
+		<RadioGroup
+			android:id="@+id/nvoc_fec"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:gravity="center_vertical"
+			android:orientation="horizontal">
+
+			<TextView
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_marginRight="10dp"
+				android:layout_weight="6"
+				android:text="fec switch"
+				android:textSize="14sp"
+				android:textColor="@color/customBlue"/>
+
+			<RadioButton
+				android:id="@+id/nvoc_fec_on"
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="7"
+				android:text="On"
+				android:textSize="14sp"
+				android:checked="true"/>
+
+			<RadioButton
+				android:id="@+id/nvoc_fec_off"
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="7"
+				android:text="Off"
+				android:textSize="14sp"/>
+		</RadioGroup>
+	</LinearLayout>
+</LinearLayout>
