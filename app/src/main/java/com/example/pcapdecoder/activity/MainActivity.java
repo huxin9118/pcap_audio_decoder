@@ -905,10 +905,10 @@ public class MainActivity extends Activity {
 			if(parse_method_type == 0) {
 				decodeCancel();
 			}
-			else if(parse_method_type == 0) {
+			else if(parse_method_type == 1) {
 				playCancel();
 			}
-			else if(parse_method_type == 0) {
+			else if(parse_method_type == 2) {
 				getPayloadCancel();
 			}
 			cancelToast();

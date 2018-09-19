@@ -10,7 +10,7 @@ typedef  unsigned short u_short;
 
 #pragma pack(1)
 
-typedef struct ip_hdr{//ipv4Í·²¿
+typedef struct ip_hdr{//ipv4å¤´éƒ¨
 #ifdef __LITTLE_ENDIAN_BITFIELD
 	u_char ip_length:4,  
 	ip_version:4;                
@@ -29,14 +29,14 @@ typedef struct ip_hdr{//ipv4Í·²¿
 	u_int32 ip_dest;                      
 } IP_HDR;
 
-typedef struct udp_hdr{//udpÍ·²¿
+typedef struct udp_hdr{//udpå¤´éƒ¨
 	u_short s_port;      
 	u_short d_port;      
 	u_short length;      
 	u_short cksum;      
 } UDP_HDR;
 
-typedef struct psd_header{//Î±Í·²¿£¬ÓÃÓÚ¼ÆËãĞ£ÑéºÍ
+typedef struct psd_header{//ä¼ªå¤´éƒ¨ï¼Œç”¨äºè®¡ç®—æ ¡éªŒå’Œ
 	u_int32 s_ip;//source ip
 	u_int32 d_ip;//dest ip
 	u_char mbz;//0
@@ -45,9 +45,9 @@ typedef struct psd_header{//Î±Í·²¿£¬ÓÃÓÚ¼ÆËãĞ£ÑéºÍ
 } PSD_HEADER;
 
 typedef struct mac_frame_hdr{
-	u_char m_cDstMacAddress[6];   //Ä¿µÄmacµØÖ·
-	u_char m_cSrcMacAddress[6];   //Ô´macµØÖ·
-	u_short m_cType;              //ÉÏÒ»²ãĞ­ÒéÀàĞÍ£¬Èç0x0800´ú±íÉÏÒ»²ãÊÇIPĞ­Òé£¬0x0806Îªarp
+	u_char m_cDstMacAddress[6];   //ç›®çš„macåœ°å€
+	u_char m_cSrcMacAddress[6];   //æºmacåœ°å€
+	u_short m_cType;              //ä¸Šä¸€å±‚åè®®ç±»å‹ï¼Œå¦‚0x0800ä»£è¡¨ä¸Šä¸€å±‚æ˜¯IPåè®®ï¼Œ0x0806ä¸ºarp
 } MAC_FRAME_HDR;
 
 typedef struct linux_cooked_capture_hdr{
@@ -56,11 +56,11 @@ typedef struct linux_cooked_capture_hdr{
 	u_short link_layer_address_lenght;
 	u_char source[6];
 	u_short padding;
-	u_short protocol;              //ÉÏÒ»²ãĞ­ÒéÀàĞÍ£¬Èç0x0800´ú±íÉÏÒ»²ãÊÇIPĞ­Òé£¬0x0806Îªarp
+	u_short protocol;              //ä¸Šä¸€å±‚åè®®ç±»å‹ï¼Œå¦‚0x0800ä»£è¡¨ä¸Šä¸€å±‚æ˜¯IPåè®®ï¼Œ0x0806ä¸ºarp
 } LINUX_COOKED_CAPTURE_HDR;
 
 typedef struct rtp_hdr{
-#ifdef __LITTLE_ENDIAN_BITFIELD   //×¢Òâ£¬¸÷¸ö»úÆ÷´ó¶ËĞ¡¶ËÊÇ²»Í¬µÄ£¬ËùÒÔÒª¸ù¾İÊµ¼ÊÇé¿öĞŞ¸Ä´Ëºê¶¨Òå
+#ifdef __LITTLE_ENDIAN_BITFIELD   //æ³¨æ„ï¼Œå„ä¸ªæœºå™¨å¤§ç«¯å°ç«¯æ˜¯ä¸åŒçš„ï¼Œæ‰€ä»¥è¦æ ¹æ®å®é™…æƒ…å†µä¿®æ”¹æ­¤å®å®šä¹‰
 	u_char csrc_count:4,
 	extension:1,
 	padding:1,
@@ -68,16 +68,16 @@ typedef struct rtp_hdr{
 	u_char payload_type:7,
 	marker:1;
 #else
-	u_char version:2, //RTPĞ­ÒéµÄ°æ±¾ºÅ£¬Õ¼2Î»£¬µ±Ç°Ğ­Òé°æ±¾ºÅÎª2
-	padding:1, //Ìî³ä±êÖ¾£¬Õ¼1Î»£¬Èç¹ûP=1£¬ÔòÔÚ¸Ã±¨ÎÄµÄÎ²²¿Ìî³äÒ»¸ö»ò¶à¸ö¶îÍâµÄ°ËÎ»×é£¬ËüÃÇ²»ÊÇÓĞĞ§ÔØºÉµÄÒ»²¿·Ö
-	extension:1, //À©Õ¹±êÖ¾£¬Õ¼1Î»£¬Èç¹ûX=1£¬ÔòÔÚRTP±¨Í·ºó¸úÓĞÒ»¸öÀ©Õ¹±¨Í·¡£
-	csrc_count:4; //CSRC¼ÆÊıÆ÷£¬Õ¼4Î»£¬Ö¸Ê¾CSRC ±êÊ¶·ûµÄ¸öÊı
-	u_char  marker:1, //²»Í¬µÄÓĞĞ§ÔØºÉÓĞ²»Í¬µÄº¬Òå£¬¶ÔÓÚÊÓÆµ£¬±ê¼ÇÒ»Ö¡µÄ½áÊø£»¶ÔÓÚÒôÆµ£¬±ê¼Ç»á»°µÄ¿ªÊ¼
-	payload_type:7; //ÓĞĞ§ÔØºÉÀàĞÍ£¬Õ¼7Î»£¬ÓÃÓÚËµÃ÷RTP±¨ÎÄÖĞÓĞĞ§ÔØºÉµÄÀàĞÍ£¬ÈçGSMÒôÆµ¡¢JPEMÍ¼ÏñµÈ
+	u_char version:2, //RTPåè®®çš„ç‰ˆæœ¬å·ï¼Œå 2ä½ï¼Œå½“å‰åè®®ç‰ˆæœ¬å·ä¸º2
+	padding:1, //å¡«å……æ ‡å¿—ï¼Œå 1ä½ï¼Œå¦‚æœP=1ï¼Œåˆ™åœ¨è¯¥æŠ¥æ–‡çš„å°¾éƒ¨å¡«å……ä¸€ä¸ªæˆ–å¤šä¸ªé¢å¤–çš„å…«ä½ç»„ï¼Œå®ƒä»¬ä¸æ˜¯æœ‰æ•ˆè½½è·çš„ä¸€éƒ¨åˆ†
+	extension:1, //æ‰©å±•æ ‡å¿—ï¼Œå 1ä½ï¼Œå¦‚æœX=1ï¼Œåˆ™åœ¨RTPæŠ¥å¤´åè·Ÿæœ‰ä¸€ä¸ªæ‰©å±•æŠ¥å¤´ã€‚
+	csrc_count:4; //CSRCè®¡æ•°å™¨ï¼Œå 4ä½ï¼ŒæŒ‡ç¤ºCSRC æ ‡è¯†ç¬¦çš„ä¸ªæ•°
+	u_char  marker:1, //ä¸åŒçš„æœ‰æ•ˆè½½è·æœ‰ä¸åŒçš„å«ä¹‰ï¼Œå¯¹äºè§†é¢‘ï¼Œæ ‡è®°ä¸€å¸§çš„ç»“æŸï¼›å¯¹äºéŸ³é¢‘ï¼Œæ ‡è®°ä¼šè¯çš„å¼€å§‹
+	payload_type:7; //æœ‰æ•ˆè½½è·ç±»å‹ï¼Œå 7ä½ï¼Œç”¨äºè¯´æ˜RTPæŠ¥æ–‡ä¸­æœ‰æ•ˆè½½è·çš„ç±»å‹ï¼Œå¦‚GSMéŸ³é¢‘ã€JPEMå›¾åƒç­‰
 #endif
-	u_short seq; //ĞòÁĞºÅ£ºÕ¼16Î»£¬ÓÃÓÚ±êÊ¶·¢ËÍÕßËù·¢ËÍµÄRTP±¨ÎÄµÄĞòÁĞºÅ£¬Ã¿·¢ËÍÒ»¸ö±¨ÎÄ£¬ĞòÁĞºÅÔö1
-	u_int32 timestamp; //Ê±´Á£ºÕ¼32Î»£¬Ê±´Á·´Ó³ÁË¸ÃRTP±¨ÎÄµÄµÚÒ»¸ö°ËÎ»×éµÄ²ÉÑùÊ±¿Ì¡£Ê¹ÓÃÊ±´ÁÀ´¼ÆËãÑÓ³ÙºÍÑÓ³Ù¶¶¶¯
-	u_int32 ssrc; //Õ¼32Î»£¬ÓÃÓÚ±êÊ¶Í¬²½ĞÅÔ´¡£¸Ã±êÊ¶·ûÊÇËæ»úÑ¡ÔñµÄ£¬²Î¼ÓÍ¬Ò»ÊÓÆµ»áÒéµÄÁ½¸öÍ¬²½ĞÅÔ´²»ÄÜÓĞÏàÍ¬µÄSSRC
+	u_short seq; //åºåˆ—å·ï¼šå 16ä½ï¼Œç”¨äºæ ‡è¯†å‘é€è€…æ‰€å‘é€çš„RTPæŠ¥æ–‡çš„åºåˆ—å·ï¼Œæ¯å‘é€ä¸€ä¸ªæŠ¥æ–‡ï¼Œåºåˆ—å·å¢1
+	u_int32 timestamp; //æ—¶æˆ³ï¼šå 32ä½ï¼Œæ—¶æˆ³åæ˜ äº†è¯¥RTPæŠ¥æ–‡çš„ç¬¬ä¸€ä¸ªå…«ä½ç»„çš„é‡‡æ ·æ—¶åˆ»ã€‚ä½¿ç”¨æ—¶æˆ³æ¥è®¡ç®—å»¶è¿Ÿå’Œå»¶è¿ŸæŠ–åŠ¨
+	u_int32 ssrc; //å 32ä½ï¼Œç”¨äºæ ‡è¯†åŒæ­¥ä¿¡æºã€‚è¯¥æ ‡è¯†ç¬¦æ˜¯éšæœºé€‰æ‹©çš„ï¼Œå‚åŠ åŒä¸€è§†é¢‘ä¼šè®®çš„ä¸¤ä¸ªåŒæ­¥ä¿¡æºä¸èƒ½æœ‰ç›¸åŒçš„SSRC
 	u_int32 csrc[0];
 } RTP_HDR;
 
@@ -110,7 +110,7 @@ typedef struct pcap_pkt_hdr {
 
 
 /**
- * ×Ô¶¨ÒåµÄaudio»º³å¶ÓÁĞ£¬ÊµÏÖÁËjitterbuffer¹¦ÄÜ£¬Ïû³ıRTPÂÒĞò¡¢¶ª°ü
+ * è‡ªå®šä¹‰çš„audioç¼“å†²é˜Ÿåˆ—ï¼Œå®ç°äº†jitterbufferåŠŸèƒ½ï¼Œæ¶ˆé™¤RTPä¹±åºã€ä¸¢åŒ…
  */
 typedef struct audio_buffers{
 	char* data[MAX_AUDIO_BUFFERS_SIZE];
@@ -122,7 +122,7 @@ typedef struct audio_buffers{
 } ADUIO_BUFFERS;
 
 /**
- * PCM»º³å¶ÓÁĞ£¬¶àÏß³Ì£¨½âÂëÏß³Ì¡¢²¥·ÅÏß³Ì£©¹²Í¬Ê¹ÓÃÊ±ĞèÉÏËømutex
+ * PCMç¼“å†²é˜Ÿåˆ—ï¼Œå¤šçº¿ç¨‹ï¼ˆè§£ç çº¿ç¨‹ã€æ’­æ”¾çº¿ç¨‹ï¼‰å…±åŒä½¿ç”¨æ—¶éœ€ä¸Šé”mutex
  */
 typedef struct pcm_buffers{
 	u_char* data[MAX_PCM_BUFFERS_SIZE];
