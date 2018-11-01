@@ -507,6 +507,9 @@ public class MainActivity extends Activity {
 		final EditText edit_nvoc_ptime = (EditText) dialogView.findViewById(R.id.nvoc_ptime);
 		final RadioGroup radio_nvoc_max_kbps = (RadioGroup) dialogView.findViewById(R.id.nvoc_max_kbps);
 		final RadioGroup radio_nvoc_fec = (RadioGroup) dialogView.findViewById(R.id.nvoc_fec);
+		final EditText edit_acelp_type_num = (EditText) dialogView.findViewById(R.id.acelp_type_num);
+		final EditText edit_acelp_ptime = (EditText) dialogView.findViewById(R.id.acelp_ptime);
+		final EditText edit_acelp_max_kbps = (EditText) dialogView.findViewById(R.id.acelp_max_kbps);
 
 		final SharedPreferences sp = getSharedPreferences("custom",Context.MODE_PRIVATE);
 		edit_amr_type_num.setText(sp.getInt("amr_type_num",126)+"");
@@ -516,6 +519,9 @@ public class MainActivity extends Activity {
 		edit_nvoc_ptime.setText(sp.getInt("nvoc_ptime",60)+"");
 		radio_nvoc_max_kbps.check( sp.getFloat("nvoc_max_kbps",2.4f) == 2.4f ? R.id.nvoc_max_kbps_2_4 : R.id.nvoc_max_kbps_2_2 );
 		radio_nvoc_fec.check( sp.getBoolean("nvoc_fec",true) ? R.id.nvoc_fec_on : R.id.nvoc_fec_off );
+		edit_acelp_type_num.setText(sp.getInt("acelp_type_num",99)+"");
+		edit_acelp_ptime.setText(sp.getInt("acelp_ptime",60)+"");
+		edit_acelp_max_kbps.setText(sp.getFloat("acelp_max_kbps",9.2f)+"");
 
 		customDialogbuilder.setView(dialogView);
 		customDialogbuilder.setPositiveButton("确定", null);
@@ -547,6 +553,9 @@ public class MainActivity extends Activity {
 				editor.putInt("nvoc_ptime",60);
 				editor.putFloat("nvoc_max_kbps",2.4f);
 				editor.putBoolean("nvoc_fec",true);
+				editor.putInt("acelp_type_num",99);
+				editor.putInt("acelp_ptime",60);
+				editor.putFloat("acelp_max_kbps",9.2f);
 				editor.commit();
 
 				edit_amr_type_num.setText(sp.getInt("amr_type_num",126)+"");
@@ -556,6 +565,9 @@ public class MainActivity extends Activity {
 				edit_nvoc_ptime.setText(sp.getInt("nvoc_ptime",60)+"");
 				radio_nvoc_max_kbps.check( sp.getFloat("nvoc_max_kbps",2.4f) == 2.4f ? R.id.nvoc_max_kbps_2_4 : R.id.nvoc_max_kbps_2_2 );
 				radio_nvoc_fec.check( sp.getBoolean("nvoc_fec",true) ? R.id.nvoc_fec_on : R.id.nvoc_fec_off );
+				edit_acelp_type_num.setText(sp.getInt("acelp_type_num",99)+"");
+				edit_acelp_ptime.setText(sp.getInt("acelp_ptime",60)+"");
+				edit_acelp_max_kbps.setText(sp.getFloat("acelp_max_kbps",9.2f)+"");
 			}
 		});
 		dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
@@ -671,9 +683,15 @@ public class MainActivity extends Activity {
 				AudioInfo nvoc_paramter = new AudioInfo();
 				nvoc_paramter.setType_num(sp.getInt("nvoc_type_num", 93));
 				nvoc_paramter.setPtime(sp.getInt("nvoc_ptime", 60));
-				nvoc_paramter.setMax_kbps(sp.getFloat("nvoc_max_kbps",2.4f) == 2.4f ? 0 : 1);
+				nvoc_paramter.setMax_kbps(sp.getFloat("nvoc_max_kbps",2.4f));
 				nvoc_paramter.setFec(sp.getBoolean("nvoc_fec",true) ? 1 : 0);
 				audioInfos.add(nvoc_paramter);
+
+				AudioInfo acelp_paramter = new AudioInfo();
+				acelp_paramter.setType_num(sp.getInt("acelp_type_num", 99));
+				acelp_paramter.setPtime(sp.getInt("acelp_ptime", 60));
+				acelp_paramter.setMax_kbps(sp.getFloat("acelp_max_kbps",9.2f));
+				audioInfos.add(acelp_paramter);
 			}
 			int stutas = parseAudioInfo(input_url, parse_paramter_type, audioInfos);
 			if (stutas != 0) {

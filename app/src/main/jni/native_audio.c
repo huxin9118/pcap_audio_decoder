@@ -1,7 +1,6 @@
 ﻿/*
  *  COPYRIGHT NOTICE
  *  Copyright (C) 2017, Jhuster <huxin9118@163.com>
- *  https://github.com/Jhuster/AudioDemo
  *
  *  @license under the Apache License, Version 2.0
  *
@@ -15,6 +14,7 @@
 #include <android/log.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <dlfcn.h>
 
 #include "libavcodec/avcodec.h"
 #include "libavformat/avformat.h"
@@ -36,17 +36,25 @@
 #define SAMPLERATE 8000
 #define CHANNELS 1
 #define PERIOD_TIME 20 //ms
-#define FRAME_SIZE SAMPLERATE*PERIOD_TIME/1000
+#define SAMPLE_SIZE SAMPLERATE*PERIOD_TIME/1000
 
 #define MAX_AUDIO_PACKET_SIZE 2048
 #define MAX_AUDIO_FRAME_SIZE 192000 // 1 second of 48khz 32bit audio
 
-#define FRAME_BUFFER_SIZE 2048
-#define VOC_DECODE_BUFFER_SIZE 3
-#define FEC_DECODE_BUFFER_SIZE 72
-#define FEC_FRAME_SIZE 9
-#define NO_FEC_FRAME_SIZE 6
-//#define FRAMES_PER_PKT 3
+#define NVOC_FRAME_BUFFER_SIZE 2048
+#define NVOC_VOC_DECODE_BUFFER_SIZE 3
+#define NVOC_FEC_DECODE_BUFFER_SIZE 72
+#define NVOC_FEC_FRAME_SIZE 9
+#define NVOC_NO_FEC_FRAME_SIZE 6
+
+#define ACELP_FRAME_SIZE 18
+#define ACELP_PARM_SIZE 24
+#define ACELP_BIT_SIZE 144
+#define ACELP_INPUT_SIZE 138
+
+#define AMR_PTIME_PER_PKT 20
+#define NVOC_PTIME_PER_PKT 20
+#define ACELP_PTIME_PER_PKT 30
 
 u_short switchUshort(u_short s){//16bit大小端转换
 	return ((s & 0x00FF) << 8) | ((s & 0xFF00) >> 8);
@@ -145,6 +153,7 @@ int putPCMBuffer(PCM_BUFFERS* buffers, u_char* buffer){
 	return -1;
 }
 
+//ffmpeg I/O callback
 int fill_iobuffer(void* opaque,uint8_t *buf, int bufsize){  
 	ADUIO_BUFFERS* buffers = (ADUIO_BUFFERS*)opaque;
 	LOGI("seq:%d\t audio_buffers.size:%d",buffers->seq[0],buffers->size);
@@ -180,6 +189,7 @@ int fill_iobuffer(void* opaque,uint8_t *buf, int bufsize){
 	// }  
 }  
 
+//str子串查找函数
 int strfind(char *str,char *sub, int str_len, int sub_len){
 	//判断字符串长度，然后从第一个开始匹配
 	for (int i=0; i<str_len; i++) {
@@ -206,6 +216,12 @@ int getAudioInfosIndex(AUDIO_INFO* audioInfos,int infoSize,u_int32 ip_src,u_int3
 	return -1;
 }
 
+/**
+ * parsePktInfo:解析一个媒体流分组的所有包信息
+ * jstring pcap_jstr[in]:pcap文件输入路径
+ * jobject object_list[in,out]:解析出的媒体流分组的所有包信息
+ * jobject object_audioInfo[in]:需要解析的媒体流分组参数
+ */
 JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parsePktInfo(JNIEnv *env, jobject thiz, jstring pcap_jstr, jobject object_list, jobject object_audioInfo){
 	LOGI("parsePktInfo start");
 	jclass class_list = (*env)->FindClass(env,"java/util/ArrayList");
@@ -226,7 +242,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseP
 	jfieldID fieldID_type_num = (*env)->GetFieldID(env, class_audio, "type_num", "I");
 	jfieldID fieldID_a_line = (*env)->GetFieldID(env, class_audio, "a_line", "Ljava/lang/String;");
 	jfieldID fieldID_pkt_count = (*env)->GetFieldID(env, class_audio, "pkt_count", "I");
-	jfieldID fieldID_max_kbps = (*env)->GetFieldID(env, class_audio, "max_kbps", "I");
+	jfieldID fieldID_max_kbps = (*env)->GetFieldID(env, class_audio, "max_kbps", "F");
 	jfieldID fieldID_fec = (*env)->GetFieldID(env, class_audio, "fec", "I");
 	char a_line[10]={0};
 	u_int32 ip_src = (*env)->GetIntField(env, object_audioInfo, fieldID_ip_src);
@@ -235,7 +251,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseP
     int type_num = (*env)->GetIntField(env, object_audioInfo, fieldID_type_num);
 	sprintf(a_line,"%s",(*env)->GetStringUTFChars(env,(*env)->GetObjectField(env, object_audioInfo, fieldID_a_line), NULL));
 	int pkt_count = (*env)->GetIntField(env, object_audioInfo, fieldID_pkt_count);
-	int max_kbps = (*env)->GetIntField(env, object_audioInfo, fieldID_max_kbps);
+	float max_kbps = (*env)->GetFloatField(env, object_audioInfo, fieldID_max_kbps);
 	int fec = (*env)->GetIntField(env, object_audioInfo, fieldID_fec);
 	
 		
@@ -261,25 +277,33 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseP
 	char sip_status_line[7] = {0x53, 0x49, 0x50, 0x2f, 0x32, 0x2e, 0x30};
 	int sip_request_line_len = 10;
 	int sip_status_line_len = 7;
-
-	char a_line_nvoc[5] = {0x20, 0x4e, 0x56, 0x4f, 0x43}; 
-	int a_line_nvoc_len = 5; 
-	char a_line_nvoc_max_kbps[10] = {0x20, 0x6d, 0x61, 0x78, 0x2d, 0x6b, 0x62, 0x70, 0x73, 0x3d}; 
-	int a_line_nvoc_max_kbps_len = 10; 
-	char a_line_nvoc_fec[5] = {0x3b, 0x66, 0x65, 0x63, 0x3d}; 
-	int a_line_nvoc_fec_len = 5; 
-	char nvoc_type_num[10] = {0};
-	char nvoc_max_kbps[5] = {0};
-	char nvoc_fec[5] = {0};
-
+	
 	char a_line_amr[4] = {0x20, 0x41, 0x4d, 0x52}; 
 	int a_line_amr_len = 4; 
 	char amr_type_num[10] = {0};
+
+	char a_line_nvoc[5] = {0x20, 0x4e, 0x56, 0x4f, 0x43}; 
+	int a_line_nvoc_len = 5; 
+	char nvoc_type_num[10] = {0};
+	
+	char a_line_acelp[6] = {0x20, 0x41, 0x43, 0x45, 0x4c, 0x50}; 
+	int a_line_acelp_len = 6; 
+	char acelp_type_num[10] = {0};
 	
 	char a_line_ptime[8] = {0x61, 0x3d, 0x70, 0x74, 0x69, 0x6d, 0x65, 0x3a};
 	int a_line_ptime_len = 8;
 	char amr_ptime[10] = {0};
 	char nvoc_ptime[10] = {0};
+	char acelp_ptime[10] = {0};
+	
+	char a_line_max_kbps[10] = {0x20, 0x6d, 0x61, 0x78, 0x2d, 0x6b, 0x62, 0x70, 0x73, 0x3d}; 
+	int a_line_max_kbps_len = 10; 
+	char nvoc_max_kbps[5] = {0};
+	char acelp_max_kbps[5] = {0};
+	
+	char a_line_fec[5] = {0x3b, 0x66, 0x65, 0x63, 0x3d}; 
+	int a_line_fec_len = 5; 
+	char nvoc_fec = 1;
 
 	int sdp_index = 0;
 	
@@ -297,7 +321,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseP
 	LOGI("Cpp type_num:%d",type_num);
 	LOGI("Cpp a_line:%s",a_line);
 	LOGI("Cpp pkt_count:%d",pkt_count);
-	LOGI("Cpp max_kbps:%d",max_kbps);
+	LOGI("Cpp max_kbps:%f",max_kbps);
 	LOGI("Cpp fec:%d",fec);
 	
 	FILE *filePCAP = fopen(pcap_str,"rb");
@@ -340,7 +364,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseP
 				len_pkt_left = switchUint32(pcap_pkt_hdr->caplen);
 			}
 			if(len_pkt_left > len_read -(pos- pcap_buffer)){
-				LOGI("break: frame_index=%5d len_pkt_left=%d len_read=%5d pos- pcap_buffer=%5d",frame_index,len_pkt_left,len_read,(pos- pcap_buffer));
+				LOGI("break: frame_index=%5d len_pkt_left=%d len_read=%5d (pos-pcap_buffer)=%5d",frame_index,len_pkt_left,len_read,(pos- pcap_buffer));
 				break;
 			}
 			pos += sizeof(PCAP_PKT_HDR);
@@ -419,6 +443,17 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseP
 								(*env)->DeleteLocalRef(env,object_pktInfo);							
 							}
 						}
+						if(rtp_hdr->payload_type == type_num && !strcmp(a_line,"ACELP")){//RTP负载为ACELP
+							if(switchUint32(rtp_hdr->ssrc) == ssrc && switchUint32(ip_hdr->ip_source) == ip_src 
+							&& switchUint32(ip_hdr->ip_dest) == ip_dst){//该ACELP包来自同一同步信源
+								object_pktInfo = (*env)->NewObject(env,class_pkt,methodID_pktInfo_constructor);
+								(*env)->SetIntField(env, object_pktInfo, fieldID_frame, frame_index);
+								(*env)->SetShortField(env, object_pktInfo, fieldID_seq, switchUshort(rtp_hdr->seq));
+								(*env)->SetIntField(env, object_pktInfo, fieldID_timestamp, switchUint32(rtp_hdr->timestamp));
+								(*env)->CallBooleanMethod(env,object_list,methodID_list_add,object_pktInfo);
+								(*env)->DeleteLocalRef(env,object_pktInfo);							
+							}
+						}
 					}
 				}
 			}
@@ -453,6 +488,12 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseP
 	return 0;
 }
 
+/**
+ * parseAudioInfo:从pcap文件中解析出可用的媒体流分组
+ * jstring pcap_jstr[in]:pcap输入文件路径
+ * jint jparse_paramter_type[in]:使用的解析方式(jparse_paramter_type=0:尝试解析sdp;jparse_paramter_type=1:自定义)
+ * jobject object_list[in,out]:输入自定义的媒体参数信息(jparse_paramter_type=1有效)，输出可用的媒体流分组
+ */
 JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseAudioInfo(JNIEnv *env, jobject thiz, jstring pcap_jstr, jint jparse_paramter_type, jobject object_list){
 	LOGI("parseAudioInfo start");
 	jclass class_list = (*env)->FindClass(env,"java/util/ArrayList");
@@ -471,7 +512,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseA
 	jfieldID fieldID_type_num = (*env)->GetFieldID(env, class_audio, "type_num", "I");
 	jfieldID fieldID_pkt_count = (*env)->GetFieldID(env, class_audio, "pkt_count", "I");
 	jfieldID fieldID_a_line = (*env)->GetFieldID(env, class_audio, "a_line", "Ljava/lang/String;");
-	jfieldID fieldID_max_kbps = (*env)->GetFieldID(env, class_audio, "max_kbps", "I");
+	jfieldID fieldID_max_kbps = (*env)->GetFieldID(env, class_audio, "max_kbps", "F");
 	jfieldID fieldID_fec = (*env)->GetFieldID(env, class_audio, "fec", "I");
 	jfieldID fieldID_ptime = (*env)->GetFieldID(env, class_audio, "ptime", "I");
 		
@@ -497,28 +538,37 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseA
 	char sip_status_line[7] = {0x53, 0x49, 0x50, 0x2f, 0x32, 0x2e, 0x30};
 	int sip_request_line_len = 10;
 	int sip_status_line_len = 7;
-
-	char a_line_nvoc[5] = {0x20, 0x4e, 0x56, 0x4f, 0x43}; 
-	int a_line_nvoc_len = 5; 
-	char a_line_nvoc_max_kbps[10] = {0x20, 0x6d, 0x61, 0x78, 0x2d, 0x6b, 0x62, 0x70, 0x73, 0x3d}; 
-	int a_line_nvoc_max_kbps_len = 10; 
-	char a_line_nvoc_fec[5] = {0x3b, 0x66, 0x65, 0x63, 0x3d}; 
-	int a_line_nvoc_fec_len = 5; 
-	char nvoc_type_num[10] = {0};
-	char nvoc_max_kbps[5] = {0};
-	char nvoc_fec = 1;
-
+	
 	char a_line_amr[4] = {0x20, 0x41, 0x4d, 0x52}; 
 	int a_line_amr_len = 4; 
 	char amr_type_num[10] = {0};
+
+	char a_line_nvoc[5] = {0x20, 0x4e, 0x56, 0x4f, 0x43}; 
+	int a_line_nvoc_len = 5; 
+	char nvoc_type_num[10] = {0};
+	
+	char a_line_acelp[6] = {0x20, 0x41, 0x43, 0x45, 0x4c, 0x50}; 
+	int a_line_acelp_len = 6; 
+	char acelp_type_num[10] = {0};
 	
 	char a_line_ptime[8] = {0x61, 0x3d, 0x70, 0x74, 0x69, 0x6d, 0x65, 0x3a};
 	int a_line_ptime_len = 8;
 	char amr_ptime[10] = {0};
 	char nvoc_ptime[10] = {0};
+	char acelp_ptime[10] = {0};
+	
+	char a_line_max_kbps[10] = {0x20, 0x6d, 0x61, 0x78, 0x2d, 0x6b, 0x62, 0x70, 0x73, 0x3d}; 
+	int a_line_max_kbps_len = 10; 
+	char nvoc_max_kbps[5] = {0};
+	char acelp_max_kbps[5] = {0};
+	
+	char a_line_fec[5] = {0x3b, 0x66, 0x65, 0x63, 0x3d}; 
+	int a_line_fec_len = 5; 
+	char nvoc_fec = 1;
 	
 	LOGI("parse_paramter_type: %d",jparse_paramter_type);
 	if(jparse_paramter_type == 1){
+		//AMR---------------------------------------------------------------------------------------
 		object_audioInfo = (*env)->CallObjectMethod(env,object_list,methodID_list_remove,0);
 		
 		jint custom_amr_type_num = (*env)->GetIntField(env, object_audioInfo, fieldID_type_num);
@@ -529,6 +579,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseA
 		sprintf(amr_ptime,"%d", custom_amr_ptime);
 		LOGI("custom_amr_ptime: %d",custom_amr_ptime);
 		
+		//NVOC---------------------------------------------------------------------------------------
 		object_audioInfo = (*env)->CallObjectMethod(env,object_list,methodID_list_remove,0);
 		
 		jint custom_nvoc_type_num = (*env)->GetIntField(env, object_audioInfo, fieldID_type_num);
@@ -539,18 +590,28 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseA
 		sprintf(nvoc_ptime,"%d", custom_nvoc_ptime);
 		LOGI("custom_nvoc_ptime: %d",custom_nvoc_ptime);
 		
-		jint custom_nvoc_max_kbps = (*env)->GetIntField(env, object_audioInfo, fieldID_max_kbps);
-		if(custom_nvoc_max_kbps == 0){
+		jfloat custom_nvoc_max_kbps = (*env)->GetFloatField(env, object_audioInfo, fieldID_max_kbps);
+		LOGI("custom_nvoc_max_kbps: %f", custom_nvoc_max_kbps);
+		if(custom_nvoc_max_kbps == 2.4f){
 			sprintf(nvoc_max_kbps,"%s", "2.4");
-			LOGI("custom_nvoc_max_kbps: %s", "2.4");
-		}
-		else if(custom_nvoc_max_kbps == 1){
-			LOGI("custom_nvoc_max_kbps: %s", "2.2");
+		}else if(custom_nvoc_max_kbps == 2.2f){
+			sprintf(nvoc_max_kbps,"%s", "2.2");
 		}
 		
 		jint custom_nvoc_fec = (*env)->GetIntField(env, object_audioInfo, fieldID_fec);
 		nvoc_fec = custom_nvoc_fec;
 		LOGI("custom_nvoc_fec: %d",custom_nvoc_fec);
+		
+		//ACELP---------------------------------------------------------------------------------------
+		object_audioInfo = (*env)->CallObjectMethod(env,object_list,methodID_list_remove,0);
+		
+		jint custom_acelp_type_num = (*env)->GetIntField(env, object_audioInfo, fieldID_type_num);
+		sprintf(acelp_type_num,"%d", custom_acelp_type_num);
+		LOGI("custom_acelp_type_num: %d",custom_acelp_type_num);
+
+		jint custom_acelp_ptime = (*env)->GetIntField(env, object_audioInfo, fieldID_ptime);
+		sprintf(acelp_ptime,"%d", custom_acelp_ptime);
+		LOGI("custom_acelp_ptime: %d",custom_acelp_ptime);
 		
 		object_audioInfo = NULL;
 	}
@@ -609,7 +670,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseA
 				len_pkt_left = switchUint32(pcap_pkt_hdr->caplen);
 			}
 			if(len_pkt_left > len_read -(pos- pcap_buffer)){
-				LOGI("break: frame_index=%5d len_pkt_left=%d len_read=%5d pos- pcap_buffer=%5d",frame_index,len_pkt_left,len_read,(pos- pcap_buffer));
+				LOGI("break: frame_index=%5d len_pkt_left=%d len_read=%5d (pos-pcap_buffer)=%5d",frame_index,len_pkt_left,len_read,(pos- pcap_buffer));
 				break;
 			}
 			pos += sizeof(PCAP_PKT_HDR);
@@ -718,13 +779,13 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseA
 								// }
 							// }
 							// if(strlen(nvoc_type_num)){
-								// sdp_index = strfind(pos, a_line_nvoc_max_kbps, switchUshort(udp_hdr->length)-8, a_line_nvoc_max_kbps_len);
+								// sdp_index = strfind(pos, a_line_max_kbps, switchUshort(udp_hdr->length)-8, a_line_max_kbps_len);
 								// if(sdp_index != -1){
-									// memmove(nvoc_max_kbps,pos+sdp_index+a_line_nvoc_max_kbps_len,3);	
+									// memmove(nvoc_max_kbps,pos+sdp_index+a_line_max_kbps_len,3);	
 								// }
-								// sdp_index = strfind(pos, a_line_nvoc_fec, switchUshort(udp_hdr->length)-8, a_line_nvoc_fec_len);
+								// sdp_index = strfind(pos, a_line_fec, switchUshort(udp_hdr->length)-8, a_line_fec_len);
 								// if(sdp_index != -1){
-									// memmove(&nvoc_fec,pos+sdp_index+a_line_nvoc_fec_len,1);	
+									// memmove(&nvoc_fec,pos+sdp_index+a_line_fec_len,1);	
 								// }
 								// sdp_index = strfind(pos, a_line_ptime, switchUshort(udp_hdr->length)-8, a_line_ptime_len);
 								// if(sdp_index != -1){
@@ -751,23 +812,100 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseA
 								}
 							}
 							if(strlen(nvoc_type_num)){
-								sdp_index = strfind(pos, a_line_nvoc_max_kbps, switchUshort(udp_hdr->length)-8, a_line_nvoc_max_kbps_len);
+								sdp_index = strfind(pos, a_line_max_kbps, switchUshort(udp_hdr->length)-8, a_line_max_kbps_len);
 								if(sdp_index != -1){
-									memmove(nvoc_max_kbps,pos+sdp_index+a_line_nvoc_max_kbps_len,3);	
+									for(int i = sdp_index + a_line_max_kbps_len; i < sdp_index + a_line_max_kbps_len + 10; i++){
+										if((*(pos+i) < 0x30 || *(pos+i) > 0x39) && *(pos+i) != '.'){
+											break;
+										}else{
+											memmove(nvoc_max_kbps+strlen(nvoc_max_kbps),pos+i,1);	
+										}
+									}
 								}
-								sdp_index = strfind(pos, a_line_nvoc_fec, switchUshort(udp_hdr->length)-8, a_line_nvoc_fec_len);
+								sdp_index = strfind(pos, a_line_fec, switchUshort(udp_hdr->length)-8, a_line_fec_len);
 								if(sdp_index != -1){
-									if(*(pos+sdp_index+a_line_nvoc_fec_len) == 0x30 || *(pos+sdp_index+a_line_nvoc_fec_len) == 0x31){
-										nvoc_fec = atoi(pos+sdp_index+a_line_nvoc_fec_len);
+									if(*(pos+sdp_index+a_line_fec_len) == 0x30 || *(pos+sdp_index+a_line_fec_len) == 0x31){
+										nvoc_fec = atoi(pos+sdp_index+a_line_fec_len);
 									}
 								}
 								sdp_index = strfind(pos, a_line_ptime, switchUshort(udp_hdr->length)-8, a_line_ptime_len);
 								if(sdp_index != -1){
-									for(int i = sdp_index + a_line_ptime_len; i < sdp_index + 10; i++){
+									for(int i = sdp_index + a_line_ptime_len; i < sdp_index + a_line_ptime_len + 10; i++){
 										if(*(pos+i) < 0x30 || *(pos+i) > 0x39){
 											break;
 										}else{
 											memmove(nvoc_ptime+strlen(nvoc_ptime),pos+i,1);	
+										}
+									}
+								}
+							}
+						}
+					}
+					
+					if(!strlen(acelp_type_num)){
+						// if(strfind(pos, sip_request_line, sip_request_line_len, sip_request_line_len)!=-1){
+							// sdp_index = strfind(pos, a_line_acelp, switchUshort(udp_hdr->length)-8, a_line_acelp_len);
+							// if(sdp_index != -1){
+								// for(int i = sdp_index - 1; i>sdp_index - 10; i--){
+									// if(*(pos+i) < 0x30 || *(pos+i) > 0x39){
+										// if(i < sdp_index - 1){
+											// memmove(acelp_type_num,pos+i+1,sdp_index - 1 - i);
+											// break;
+										// }
+									// }
+								// }
+							// }
+							// if(strlen(acelp_type_num)){
+								// sdp_index = strfind(pos, a_line_max_kbps, switchUshort(udp_hdr->length)-8, a_line_max_kbps_len);
+								// if(sdp_index != -1){
+									// memmove(acelp_max_kbps,pos+sdp_index+a_line_max_kbps_len,3);	
+								// }
+								// sdp_index = strfind(pos, a_line_fec, switchUshort(udp_hdr->length)-8, a_line_fec_len);
+								// if(sdp_index != -1){
+									// memmove(&acelp_fec,pos+sdp_index+a_line_fec_len,1);	
+								// }
+								// sdp_index = strfind(pos, a_line_ptime, switchUshort(udp_hdr->length)-8, a_line_ptime_len);
+								// if(sdp_index != -1){
+									// for(int i = sdp_index + a_line_ptime_len; i < sdp_index + 10; i++){
+										// if(*(pos+i) < 0x30 || *(pos+i) > 0x39){
+											// break;
+										// }else{
+											// memmove(acelp_ptime,pos+i,1);	
+										// }
+									// }
+								// }
+							// }
+						// }
+						if(strfind(pos, sip_status_line, sip_status_line_len, sip_status_line_len)!=-1){
+							sdp_index = strfind(pos, a_line_acelp, switchUshort(udp_hdr->length)-8, a_line_acelp_len);
+							if(sdp_index != -1){
+								for(int i = sdp_index - 1; i>sdp_index - 10; i--){
+									if(*(pos+i) < 0x30 || *(pos+i) > 0x39){
+										if(i < sdp_index - 1){
+											memmove(acelp_type_num,pos+i+1,sdp_index - 1 - i);
+											break;
+										}
+									}
+								}
+							}
+							if(strlen(acelp_type_num)){
+								sdp_index = strfind(pos, a_line_max_kbps, switchUshort(udp_hdr->length)-8, a_line_max_kbps_len);
+								if(sdp_index != -1){
+									for(int i = sdp_index + a_line_max_kbps_len; i < sdp_index + a_line_max_kbps_len + 10; i++){
+										if((*(pos+i) < 0x30 || *(pos+i) > 0x39) && *(pos+i) != '.'){
+											break;
+										}else{
+											memmove(acelp_max_kbps+strlen(acelp_max_kbps),pos+i,1);	
+										}
+									}
+								}
+								sdp_index = strfind(pos, a_line_ptime, switchUshort(udp_hdr->length)-8, a_line_ptime_len);
+								if(sdp_index != -1){
+									for(int i = sdp_index + a_line_ptime_len; i < sdp_index + a_line_ptime_len +  10; i++){
+										if(*(pos+i) < 0x30 || *(pos+i) > 0x39){
+											break;
+										}else{
+											memmove(acelp_ptime+strlen(acelp_ptime),pos+i,1);	
 										}
 									}
 								}
@@ -790,7 +928,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseA
 							pos += rtp_extension_hdr_size;
 						}
 						
-						if(rtp_hdr->payload_type == atoi(nvoc_type_num) || rtp_hdr->payload_type == atoi(amr_type_num)){
+						if(rtp_hdr->payload_type == atoi(nvoc_type_num) || rtp_hdr->payload_type == atoi(amr_type_num) || rtp_hdr->payload_type == atoi(acelp_type_num)){
 							infoIndex = getAudioInfosIndex(audioInfos,infoSize,switchUint32(ip_hdr->ip_source),switchUint32(ip_hdr->ip_dest),switchUint32(rtp_hdr->ssrc));
 							if(infoIndex == -1){
 								audioInfos[infoSize].ip_src = switchUint32(ip_hdr->ip_source);
@@ -800,20 +938,11 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseA
 									audioInfos[infoSize].type_num = atoi(nvoc_type_num);
 									memmove(audioInfos[infoSize].a_line,a_line_nvoc+1,a_line_nvoc_len-1);
 									audioInfos[infoSize].a_line[a_line_nvoc_len-1] = 0;
-									
-									if(nvoc_max_kbps[2]=='4'){
-										audioInfos[infoSize].max_kbps = 0;
-									}
-									else if(nvoc_max_kbps[2]=='2'){
-										audioInfos[infoSize].max_kbps = 1;
-									}
-									else{
-										audioInfos[infoSize].max_kbps = 0;
-									}
+									audioInfos[infoSize].max_kbps = atof(nvoc_max_kbps);
 									audioInfos[infoSize].fec = nvoc_fec;
 									audioInfos[infoSize].ptime = atoi(nvoc_ptime);
 									if(audioInfos[infoSize].ptime == 0){
-										audioInfos[infoSize].ptime = PERIOD_TIME * 3;
+										audioInfos[infoSize].ptime = NVOC_PTIME_PER_PKT * 3;
 									}
 								}
 								else if(rtp_hdr->payload_type == atoi(amr_type_num)){
@@ -822,7 +951,17 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseA
 									audioInfos[infoSize].a_line[a_line_amr_len-1] = 0;
 									audioInfos[infoSize].ptime = atoi(amr_ptime);
 									if(audioInfos[infoSize].ptime == 0){
-										audioInfos[infoSize].ptime = PERIOD_TIME;
+										audioInfos[infoSize].ptime = AMR_PTIME_PER_PKT;
+									}
+								}
+								else if(rtp_hdr->payload_type == atoi(acelp_type_num)){
+									audioInfos[infoSize].type_num = atoi(acelp_type_num);
+									memmove(audioInfos[infoSize].a_line,a_line_acelp+1,a_line_acelp_len-1);
+									audioInfos[infoSize].a_line[a_line_acelp_len-1] = 0;
+									audioInfos[infoSize].max_kbps = atof(nvoc_max_kbps);
+									audioInfos[infoSize].ptime = atoi(acelp_ptime);
+									if(audioInfos[infoSize].ptime == 0){
+										audioInfos[infoSize].ptime = ACELP_PTIME_PER_PKT * 2;
 									}
 								}
 								audioInfos[infoSize].pkt_count = 1;
@@ -870,7 +1009,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_parseA
 		(*env)->SetIntField(env, object_audioInfo, fieldID_type_num, audioInfos[i].type_num);
 		(*env)->SetIntField(env, object_audioInfo, fieldID_pkt_count, audioInfos[i].pkt_count);
 		(*env)->SetObjectField(env, object_audioInfo, fieldID_a_line, (*env)->NewStringUTF(env,audioInfos[i].a_line));
-		(*env)->SetIntField(env, object_audioInfo, fieldID_max_kbps, audioInfos[i].max_kbps);
+		(*env)->SetFloatField(env, object_audioInfo, fieldID_max_kbps, audioInfos[i].max_kbps);
 		(*env)->SetIntField(env, object_audioInfo, fieldID_fec, audioInfos[i].fec);
 		(*env)->SetIntField(env, object_audioInfo, fieldID_ptime, audioInfos[i].ptime);
 		
@@ -891,7 +1030,7 @@ typedef struct info_str{
 	char * a_line;
 	int type_num;
 	int pkt_count;
-	int max_kbps;
+	float max_kbps;
 	int fec;
 	int ptime;
 	JNIEnv* env;
@@ -905,6 +1044,53 @@ static JavaVM* gs_jvm;
 static jclass gs_class;
 static pthread_mutex_t mutex;
 
+struct dynloader_acelp_handle {
+    void* libAcelp;
+    void  (*InitPreProcess)();
+    void  (*InitCoderTetra)();
+    void  (*CoderTetra)(short signal[], short lg, short* ana, short* syn);
+    void  (*DecodTetra)(short* parm, short* synth);
+    void  (*PostProcess)(short* syn,short lg);
+    void  (*Prm2bitsTetra)(short* ana, short* serial);
+    void  (*Bit2prmTetra)(short* serial, short* parm);
+    void  (*InitDecoderTetra)();
+    short * (*getNew_speech)();
+    short * new_speech;
+};
+
+void byte_to_bit(char* byte_in, short bit_out[]) {
+	int bit_index;
+	for(bit_index = 0; bit_index < 144; bit_index = bit_index + 8) {
+		bit_out[bit_index + 0] = ((0x80 & *(byte_in + bit_index / 8 )) !=  0) ?  1 : 0;
+		bit_out[bit_index + 1] = ((0x40 & *(byte_in + bit_index / 8 )) !=  0) ?  1 : 0;
+		bit_out[bit_index + 2] = ((0x20 & *(byte_in + bit_index / 8 )) !=  0) ?  1 : 0;
+		bit_out[bit_index + 3] = ((0x10 & *(byte_in + bit_index / 8 )) !=  0) ?  1 : 0;
+		bit_out[bit_index + 4] = ((0x08 & *(byte_in + bit_index / 8 )) !=  0) ?  1 : 0;
+		bit_out[bit_index + 5] = ((0x04 & *(byte_in + bit_index / 8 )) !=  0) ?  1 : 0;
+		bit_out[bit_index + 6] = ((0x02 & *(byte_in + bit_index / 8 )) !=  0) ?  1 : 0;
+		bit_out[bit_index + 7] = ((0x01 & *(byte_in + bit_index / 8 )) !=  0) ?  1 : 0;
+	}
+    return;
+}
+
+/**
+ * decode:对一个媒体流分组所有RTP包的Payload进行提取和解码
+ * INFO_STR *argv{
+ *		char * pcap_str[in]:pcap文件输入路径
+ *		char * audio_str[in]:audio文件输出路径
+ *		char * pcm_str[in]:pcm文件输出路径
+ *		u_int32 ip_src[in]:待解析媒体流分组的ip_src
+ *		u_int32 ip_dst[in]:待解析媒体流分组的ip_dst
+ *		u_int32 ssrc[in]:待解析媒体流分组的ssrc
+ *		char * a_line[in]:待解析媒体流分组的a_line类型名称(AMR、NVOC、ACELP)
+ *		int type_num[in]:待解析媒体流分组的payload type
+ *		int pkt_count[in]:待解析媒体流分组的包总数
+ *		float max_kbps[in]:待解析媒体流分组的max_kbps(a_line=NVOC\ACELP有效)
+ *		int fec[in]:待解析媒体流分组的fec(a_line=NVOC有效)
+ *		int ptime[in]:待解析媒体流分组的ptime
+ *		JNIEnv* env[in]:JNIEnv变量(仅在同线程生效,parse_method_type=0/2)
+ * }
+ */
 void *decode(void *argv)
 {
 	LOGI("decode start");
@@ -937,11 +1123,15 @@ void *decode(void *argv)
 	char rtp_extension_packer_first = 0x90;
 	int rtp_extension_hdr_size = 0;
 	u_short rtp_seq = 0;
-	char amr_frame_first = 0xf0;
+	int amr_frame_first_padding = 1;
 	char amr_nb_hdr[6] = {0x23, 0x21, 0x41, 0x4d, 0x52, 0x0a};
 	int amr_type_index[MAX_FRAMES_PER_PKT];
 	int amr_buffer_size = 0;
+	
 	int nvoc_buffer_size = 0;
+	
+	int acelp_frame_first_padding = 2;
+	int acelp_buffer_size = 0;
 
 	ADUIO_BUFFERS audio_buffers;
 	memset(&audio_buffers, 0, sizeof(ADUIO_BUFFERS));
@@ -974,8 +1164,13 @@ void *decode(void *argv)
 		}
 	}
 
-	const int frames_per_pkt = info_str->ptime / PERIOD_TIME;
-	//--------------------------------------------------------------------------------------------
+	const int amr_frames_per_pkt = info_str->ptime / AMR_PTIME_PER_PKT;
+	const int nvoc_frames_per_pkt = info_str->ptime / NVOC_PTIME_PER_PKT;
+	const int acelp_frames_per_pkt = info_str->ptime / ACELP_PTIME_PER_PKT;
+	const int amr_samples_per_pkt = info_str->ptime / PERIOD_TIME;
+	const int nvoc_samples_per_pkt = info_str->ptime / PERIOD_TIME;
+	const int acelp_samples_per_pkt = info_str->ptime / PERIOD_TIME;
+	//AMR--------------------------------------------------------------------------------------------
 	AVFormatContext	*pFormatCtx;
 	AVDictionary *options;
 	int				audioStream;
@@ -1005,22 +1200,26 @@ void *decode(void *argv)
 	int out_sample_rate;
 	int out_channels;
 	uint8_t* swr_buffer=(uint8_t *)av_malloc(MAX_AUDIO_FRAME_SIZE*2);
-	//--------------------------------------------------------------------------------------------
-	short int frame_buffer[FRAME_BUFFER_SIZE] = {0}; /* 解码用数据大小 */
+	//NVOC--------------------------------------------------------------------------------------------
+	short int frame_buffer[NVOC_FRAME_BUFFER_SIZE] = {0}; /* 解码用数据大小 */
 	short int ChanState; /* fec 解码状态 */
 	
-	short int fec_dec_buffer[FEC_DECODE_BUFFER_SIZE] = {0};	/* fec 解码输入数据, 输出数据为 voc_dec_buffer[3] */
-	short int voc_dec_buffer[VOC_DECODE_BUFFER_SIZE] = {0}; 	/* voc 解码输入数据 */
-	//short int pcm_dec_buffer[FRAME_SIZE * frames_per_pkt] = {0}; /* voc 解码输出数据,160个(8K,20ms,单声道)pcm数据，采样位数16 */
-	short int *pcm_dec_buffer; /* voc 解码输出数据,160个(8K,20ms,单声道)pcm数据，采样位数16 */
-	pcm_dec_buffer = (short int *)malloc(sizeof(short int) * FRAME_SIZE * frames_per_pkt);
-	memset(pcm_dec_buffer,0,sizeof(short int) * FRAME_SIZE * frames_per_pkt);
+	short int fec_dec_buffer[NVOC_FEC_DECODE_BUFFER_SIZE] = {0};	/* fec 解码输入数据, 输出数据为 voc_dec_buffer[3] */
+	short int voc_dec_buffer[NVOC_VOC_DECODE_BUFFER_SIZE] = {0}; 	/* voc 解码输入数据 */
+	short int pcm_dec_buffer[SAMPLE_SIZE * nvoc_samples_per_pkt]; /* voc 解码输出数据,160个(8K,20ms,单声道)pcm数据，采样位数16 */
 	
 	int bit_index = 0;
 	short int chan_state = 0;
 	short int tone_dtmf;
+	//ACELP--------------------------------------------------------------------------------------------
+	struct dynloader_acelp_handle acelpHandle;
+	short acelp_parm[ACELP_PARM_SIZE] = { 0 };
+	short acelp_bit_buf[ACELP_BIT_SIZE] = { 0 };
+	short acelp_input_buf[ACELP_INPUT_SIZE] = { 0 };
+	short acelp_pcm_buf[SAMPLE_SIZE * acelp_samples_per_pkt];
 	//--------------------------------------------------------------------------------------------
-
+	
+	
 	long process = 0;
 
 	JNIEnv *env;
@@ -1066,7 +1265,7 @@ void *decode(void *argv)
 					len_pkt_left = switchUint32(pcap_pkt_hdr->caplen);
 				}
 				if(len_pkt_left > len_read -(pos- pcap_buffer)){
-					LOGI("break: frame_index=%5d len_pkt_left=%d len_read=%5d pos- pcap_buffer=%5d",frame_index,len_pkt_left,len_read,(pos- pcap_buffer));
+					LOGI("break: frame_index=%5d len_pkt_left=%d len_read=%5d (pos-pcap_buffer)=%5d",frame_index,len_pkt_left,len_read,(pos- pcap_buffer));
 					break;
 				}
 				pos += sizeof(PCAP_PKT_HDR);
@@ -1133,7 +1332,7 @@ void *decode(void *argv)
 										memmove(audio_buffers.hdr,amr_nb_hdr,6);
 										rtp_seq = switchUshort(rtp_hdr->seq);
 
-										avio =avio_alloc_context(iobuffer, MAX_AUDIO_PACKET_SIZE,0,&audio_buffers,fill_iobuffer,NULL,NULL);  
+										avio = avio_alloc_context(iobuffer, MAX_AUDIO_PACKET_SIZE,0,&audio_buffers,fill_iobuffer,NULL,NULL);  
 										pFormatCtx->pb=avio; 
 
 										//char* input = "/storage/emulated/0/0testAudio/000.amr";
@@ -1207,120 +1406,129 @@ void *decode(void *argv)
 									}else{
 										rtp_seq++;
 									}
-
-									if(*(pos) == amr_frame_first ){
-										for(int i = 0; i<frames_per_pkt; i++){
-											if(i < frames_per_pkt - 1 && parseAmrFrameType(amr_nb_type_collect,8,*(pos+1+i),&amr_type_index[i])){
+									
+									if(parse_method_type == 2){
+										LOGI("rtp payload length:%d", switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr));
+										fwrite(pos, 1,switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr), fileAudio);
+									}else{																				
+										for(int i = 0; i<amr_frames_per_pkt; i++){
+											if(i < amr_frames_per_pkt - 1 && parseAmrFrameType(amr_nb_type_collect,8,*(pos+amr_frame_first_padding+i),&amr_type_index[i])){
 												returnValue = -7;
 												return &returnValue;
 											}
-											if(i == frames_per_pkt - 1 && parseAmrFrameType(amr_nb_type,8,*(pos+1+i),&amr_type_index[i])){
+											if(i == amr_frames_per_pkt - 1 && parseAmrFrameType(amr_nb_type,8,*(pos+amr_frame_first_padding+i),&amr_type_index[i])){
 												returnValue = -7;
 												return &returnValue;
 											}
 										}
 										
-										if(parse_method_type == 2){
-											LOGI("rtp payload length:%d", switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr));
-											fwrite(pos, 1,switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr), fileAudio);
-										}else{
-											if(switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr) < amr_buffer_size * frames_per_pkt){
-												LOGI("rtp payload is to short!!!rtp payload len:%d\t amr_buffer_size :%d\t frame_index:%d", switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr), amr_buffer_size * frames_per_pkt,frame_index);
+										if(amr_frames_per_pkt == 1){
+											amr_buffer_size = amr_nb_size[amr_type_index[0]];
+											
+											if(switchUshort(udp_hdr->length) - 8 - (int)((void*)pos-(void*)rtp_hdr) < amr_buffer_size * amr_frames_per_pkt){
+												LOGI("rtp payload is to short!!!rtp payload len:%d\t amr_buffer_size :%d\t frame_index:%d", switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr), amr_buffer_size * amr_frames_per_pkt,frame_index);
 												//pos 指向下一个pcap 包头的地址
 												pos += len_pkt_left;
 												continue;
 											}
 											
-											if(frames_per_pkt == 1){
-												amr_buffer_size = amr_nb_size[amr_type_index[0]];
-												fwrite(pos+1, 1,amr_buffer_size, fileAudio);
-												if(audio_buffers.buffer_size == 0){
-													audio_buffers.buffer_size = amr_buffer_size;
-												}
-												audio_buffer = (char *)malloc(1*amr_buffer_size);
-												memmove(audio_buffer,pos+1,amr_buffer_size);
-												setAudioBuffer(&audio_buffers,audio_buffer,switchUshort(rtp_hdr->seq));
-												audio_index++;
-												LOGI("audio_buffers.size:%5d\t audio_index:%5d\t pkt_count:%5d\t seq:%5d",audio_buffers.size,audio_index,info_str->pkt_count,switchUshort(rtp_hdr->seq));
+											fwrite(pos+amr_frame_first_padding, 1,amr_buffer_size, fileAudio);
+											if(audio_buffers.buffer_size == 0){
+												audio_buffers.buffer_size = amr_buffer_size * amr_frames_per_pkt;
 											}
-											else if(frames_per_pkt > 1){
-												amr_buffer_size = amr_nb_size[amr_type_index[frames_per_pkt - 1]];
-												if(audio_buffers.buffer_size == 0){
-													audio_buffers.buffer_size = amr_buffer_size * frames_per_pkt;
-												}
-												audio_buffer = (char *)malloc(1*audio_buffers.buffer_size);
-												
-												for(int i = 0; i<frames_per_pkt; i++){
-													fwrite(pos + frames_per_pkt, 1,1, fileAudio);
-													fwrite(pos + frames_per_pkt + 1 + (amr_buffer_size - 1) * i, 1,amr_buffer_size - 1, fileAudio);
-													
-													memmove(audio_buffer + amr_buffer_size * i,pos + frames_per_pkt,1);
-													memmove(audio_buffer + amr_buffer_size * i + 1, pos + frames_per_pkt + 1 + (amr_buffer_size - 1) * i, amr_buffer_size - 1);
-												}
-												setAudioBuffer(&audio_buffers,audio_buffer,switchUshort(rtp_hdr->seq));
-												audio_index++;
-												LOGI("audio_buffers.size:%5d\t audio_index:%5d\t pkt_count:%5d seq:%5d",audio_buffers.size,audio_index,info_str->pkt_count,switchUshort(rtp_hdr->seq));
-											}
-											// LOGI("%5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d",audio_buffers.seq[0],audio_buffers.seq[1],audio_buffers.seq[2],audio_buffers.seq[3],audio_buffers.seq[4]
-											// ,audio_buffers.seq[5],audio_buffers.seq[6],audio_buffers.seq[7],audio_buffers.seq[8],audio_buffers.seq[9],audio_buffers.seq[10],audio_buffers.seq[11],audio_buffers.seq[12]
-											// ,audio_buffers.seq[13],audio_buffers.seq[14],audio_buffers.seq[15],audio_buffers.seq[16],audio_buffers.seq[17],audio_buffers.seq[18],audio_buffers.seq[19]);
+											audio_buffer = (char *)malloc(1*audio_buffers.buffer_size);
+											memmove(audio_buffer,pos+amr_frame_first_padding,amr_buffer_size);
+											setAudioBuffer(&audio_buffers,audio_buffer,switchUshort(rtp_hdr->seq));
+											audio_index++;
+											LOGI("audio_buffers.size:%5d\t audio_index:%5d\t pkt_count:%5d\t seq:%5d",audio_buffers.size,audio_index,info_str->pkt_count,switchUshort(rtp_hdr->seq));
+										}
+										else if(amr_frames_per_pkt > 1){
+											amr_buffer_size = amr_nb_size[amr_type_index[amr_frames_per_pkt - 1]];
 											
-											if(audio_buffers.size >= 20 || audio_index >= info_str->pkt_count){
-											//--------------------------------------------------------------------------------------------------------------
-												while(audio_buffers.size > 10 || (audio_buffers.size > 0 && audio_index >= info_str->pkt_count)){
-													//LOGI("seq:%d\t audio_buffers.size:%d",audio_buffers.seq[0],audio_buffers.size);
-													
-													if(audio_buffers.seq[0] != 0){
-														if(av_read_frame(pFormatCtx, packet)>=0){
-															if(packet->stream_index==audioStream){
-																ret = avcodec_decode_audio4( pCodecCtx, pFrame,&got_picture, packet);
-																if ( ret < 0 ) {
-																	LOGE("Error in decoding audio frame.");
-																	returnValue = -8;
+											if(switchUshort(udp_hdr->length) - 8 - (int)((void*)pos-(void*)rtp_hdr) < amr_buffer_size * amr_frames_per_pkt){
+												LOGI("rtp payload is to short!!!rtp payload len:%d\t amr_buffer_size :%d\t frame_index:%d", switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr), amr_buffer_size * amr_frames_per_pkt,frame_index);
+												//pos 指向下一个pcap 包头的地址
+												pos += len_pkt_left;
+												continue;
+											}
+											
+											if(audio_buffers.buffer_size == 0){
+												audio_buffers.buffer_size = amr_buffer_size * amr_frames_per_pkt;
+											}
+											audio_buffer = (char *)malloc(1*audio_buffers.buffer_size);
+											
+											for(int i = 0; i<amr_frames_per_pkt; i++){
+												fwrite(pos + amr_frame_first_padding + amr_frames_per_pkt - 1, 1,1, fileAudio);
+												fwrite(pos + amr_frame_first_padding + amr_frames_per_pkt + (amr_buffer_size - 1) * i, 1,amr_buffer_size - 1, fileAudio);
+												
+												memmove(audio_buffer + amr_buffer_size * i,pos + amr_frame_first_padding + amr_frames_per_pkt - 1,1);
+												memmove(audio_buffer + amr_buffer_size * i + 1, pos + amr_frame_first_padding + amr_frames_per_pkt + (amr_buffer_size - 1) * i, amr_buffer_size - 1);
+											}
+											setAudioBuffer(&audio_buffers,audio_buffer,switchUshort(rtp_hdr->seq));
+											audio_index++;
+											LOGI("audio_buffers.size:%5d\t audio_index:%5d\t pkt_count:%5d seq:%5d",audio_buffers.size,audio_index,info_str->pkt_count,switchUshort(rtp_hdr->seq));
+										}
+										// LOGI("%5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d",audio_buffers.seq[0],audio_buffers.seq[1],audio_buffers.seq[2],audio_buffers.seq[3],audio_buffers.seq[4]
+										// ,audio_buffers.seq[5],audio_buffers.seq[6],audio_buffers.seq[7],audio_buffers.seq[8],audio_buffers.seq[9],audio_buffers.seq[10],audio_buffers.seq[11],audio_buffers.seq[12]
+										// ,audio_buffers.seq[13],audio_buffers.seq[14],audio_buffers.seq[15],audio_buffers.seq[16],audio_buffers.seq[17],audio_buffers.seq[18],audio_buffers.seq[19]);
+										
+										if(audio_buffers.size >= 20 || audio_index >= info_str->pkt_count){
+										//--------------------------------------------------------------------------------------------------------------
+											while(audio_buffers.size > 10 || (audio_buffers.size > 0 && audio_index >= info_str->pkt_count)){
+												//LOGI("seq:%d\t audio_buffers.size:%d",audio_buffers.seq[0],audio_buffers.size);
+												
+												if(audio_buffers.seq[0] != 0){
+													if(av_read_frame(pFormatCtx, packet)>=0){
+														if(packet->stream_index==audioStream){
+															ret = avcodec_decode_audio4( pCodecCtx, pFrame,&got_picture, packet);
+															if ( ret < 0 ) {
+																LOGE("Error in decoding audio frame.");
+																returnValue = -8;
+																return &returnValue;
+															}
+															if ( got_picture > 0 ){
+																// LOGI("%5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d",audio_buffers.seq[0],audio_buffers.seq[1],audio_buffers.seq[2],audio_buffers.seq[3],audio_buffers.seq[4]
+																// ,audio_buffers.seq[5],audio_buffers.seq[6],audio_buffers.seq[7],audio_buffers.seq[8],audio_buffers.seq[9],audio_buffers.seq[10],audio_buffers.seq[11],audio_buffers.seq[12]
+																// ,audio_buffers.seq[13],audio_buffers.seq[14],audio_buffers.seq[15],audio_buffers.seq[16],audio_buffers.seq[17],audio_buffers.seq[18],audio_buffers.seq[19]);
+																swr_size = swr_convert(au_convert_ctx,&swr_buffer, MAX_AUDIO_FRAME_SIZE,(const uint8_t **)pFrame->data , out_nb_samples);
+																//pcm_buffer_size=av_samples_get_buffer_size(NULL,out_channels ,pFrame->nb_samples, out_sample_fmt, 1);
+																if(out_sample_fmt == AV_SAMPLE_FMT_U8){
+																	pcm_buffers.buffer_size = swr_size * out_channels  * 1;
+																}
+																else if(out_sample_fmt == AV_SAMPLE_FMT_S16){
+																	pcm_buffers.buffer_size = swr_size * out_channels  * 2;
+																}
+																else if(out_sample_fmt == AV_SAMPLE_FMT_FLT){
+																	pcm_buffers.buffer_size = swr_size * out_channels  * 4;
+																}
+																fwrite(swr_buffer, 1, pcm_buffers.buffer_size, filePCM);//Write PCM	
+																
+																pcm_buffer=(u_char *)malloc(1*pcm_buffers.buffer_size);
+																memmove(pcm_buffer,swr_buffer,pcm_buffers.buffer_size);
+																pcm_index++;
+																LOGI("pcm_index:%5d\t pts:%lld\t packet size:%d\t pcm_buffers.size:%d\t audio_buffers.size:%d",pcm_index,packet->pts,packet->size,pcm_buffers.size,audio_buffers.size);
+																//################获取mutex#################
+																if(parse_method_type == 1 && 0 != pthread_mutex_lock(&mutex)){
+																	returnValue = -9;
+																	return &returnValue;
+																}	
+																//##########################################
+																putPCMBuffer(&pcm_buffers, pcm_buffer);
+																//################释放mutex#################
+																if(parse_method_type == 1 && 0 != pthread_mutex_unlock(&mutex)){
+																	returnValue = -10;
 																	return &returnValue;
 																}
-																if ( got_picture > 0 ){
-																	// LOGI("%5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d",audio_buffers.seq[0],audio_buffers.seq[1],audio_buffers.seq[2],audio_buffers.seq[3],audio_buffers.seq[4]
-																	// ,audio_buffers.seq[5],audio_buffers.seq[6],audio_buffers.seq[7],audio_buffers.seq[8],audio_buffers.seq[9],audio_buffers.seq[10],audio_buffers.seq[11],audio_buffers.seq[12]
-																	// ,audio_buffers.seq[13],audio_buffers.seq[14],audio_buffers.seq[15],audio_buffers.seq[16],audio_buffers.seq[17],audio_buffers.seq[18],audio_buffers.seq[19]);
-																	swr_size = swr_convert(au_convert_ctx,&swr_buffer, MAX_AUDIO_FRAME_SIZE,(const uint8_t **)pFrame->data , out_nb_samples);
-																	//pcm_buffer_size=av_samples_get_buffer_size(NULL,out_channels ,pFrame->nb_samples, out_sample_fmt, 1);
-																	if(out_sample_fmt == AV_SAMPLE_FMT_U8){
-																		pcm_buffers.buffer_size = swr_size * out_channels  * 1;
-																	}
-																	else if(out_sample_fmt == AV_SAMPLE_FMT_S16){
-																		pcm_buffers.buffer_size = swr_size * out_channels  * 2;
-																	}
-																	else if(out_sample_fmt == AV_SAMPLE_FMT_FLT){
-																		pcm_buffers.buffer_size = swr_size * out_channels  * 4;
-																	}
-																	fwrite(swr_buffer, 1, pcm_buffers.buffer_size, filePCM);//Write PCM	
-																	
-																	pcm_buffer=(u_char *)malloc(1*pcm_buffers.buffer_size);
-																	memmove(pcm_buffer,swr_buffer,pcm_buffers.buffer_size);
-																	pcm_index++;
-																	LOGI("pcm_index:%5d\t pts:%lld\t packet size:%d\t pcm_buffers.size:%d\t audio_buffers.size:%d",pcm_index,packet->pts,packet->size,pcm_buffers.size,audio_buffers.size);
-																	//################获取mutex#################
-																	if(parse_method_type == 1 && 0 != pthread_mutex_lock(&mutex)){
-																		returnValue = -9;
-																		return &returnValue;
-																	}	
-																	//##########################################
-																	putPCMBuffer(&pcm_buffers, pcm_buffer);
-																	//################释放mutex#################
-																	if(parse_method_type == 1 && 0 != pthread_mutex_unlock(&mutex)){
-																		returnValue = -10;
-																		return &returnValue;
-																	}
-																	//##########################################
-																}
+																//##########################################
 															}
 														}
-														av_free_packet(packet);
 													}
-													else{
-														LOGI("pkt loss: %d", audio_buffers.seq[1]-1);
-														pollAudioBuffer(&audio_buffers,&audio_buffer);
+													av_free_packet(packet);
+												}
+												else{
+													LOGI("pkt loss: %d", audio_buffers.seq[1]);
+													pollAudioBuffer(&audio_buffers,&audio_buffer);
+													for(int i = 0; i < amr_samples_per_pkt; i++){
 														pcm_buffer=(u_char *)malloc(1*pcm_buffers.buffer_size);
 														memset(pcm_buffer, 0, 1*pcm_buffers.buffer_size);
 														fwrite(pcm_buffer, 1, pcm_buffers.buffer_size, filePCM);//Write PCM	
@@ -1338,13 +1546,13 @@ void *decode(void *argv)
 															returnValue = -10;
 															return &returnValue;
 														}
-														//##########################################
-													}
+														//##########################################	
+													}		
 												}
-												//--------------------------------------------------------------------------------------------------------------
 											}
+											//--------------------------------------------------------------------------------------------------------------
 										}
-									}								
+									}							
 								}
 							}
 							if(rtp_hdr->payload_type == info_str->type_num && !strcmp(info_str->a_line,"NVOC")){//RTP负载为NVOC
@@ -1353,7 +1561,7 @@ void *decode(void *argv)
 									if(rtp_seq == 0){
 										rtp_seq = switchUshort(rtp_hdr->seq);
 										
-										if(NVOC_VoDecoder_Init(frame_buffer, info_str->max_kbps)>FRAME_BUFFER_SIZE){
+										if(NVOC_VoDecoder_Init(frame_buffer, info_str->max_kbps == 2.4f ? 0 : 1)>NVOC_FRAME_BUFFER_SIZE){
 											LOGI("解码缓冲区不够");
 											returnValue = -11;
 											return &returnValue;
@@ -1361,29 +1569,28 @@ void *decode(void *argv)
 									}else{
 										rtp_seq++;
 									}
-									
-									if(info_str->fec == 1){
-										nvoc_buffer_size = FEC_FRAME_SIZE;
-									}
-									else{
-										nvoc_buffer_size = NO_FEC_FRAME_SIZE;
-									}
-									
+
 									if(parse_method_type == 2){
 										LOGI("rtp payload length:%d", switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr));
 										fwrite(pos, 1,switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr), fileAudio);
 									}else{
+										if(info_str->fec == 1){
+											nvoc_buffer_size = NVOC_FEC_FRAME_SIZE;
+										}
+										else{
+											nvoc_buffer_size = NVOC_NO_FEC_FRAME_SIZE;
+										}
 										//LOGI("%d====%d====%d", (void*)pos - (void*)rtp_hdr, switchUshort(udp_hdr->length) - 8,frame_index);
-										if(switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr) < nvoc_buffer_size * frames_per_pkt){
-											LOGI("rtp payload is to short!!!rtp payload len:%d\t nvoc_buffer_size :%d\t frame_index:%d", switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr), nvoc_buffer_size * frames_per_pkt,frame_index);
+										if(switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr) < nvoc_buffer_size * nvoc_frames_per_pkt){
+											LOGI("rtp payload is to short!!!rtp payload len:%d\t nvoc_buffer_size :%d\t frame_index:%d", switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr), nvoc_buffer_size * nvoc_frames_per_pkt,frame_index);
 											//pos 指向下一个pcap 包头的地址
 											pos += len_pkt_left;
 											continue;
 										}
 										
-										fwrite(pos, 1,nvoc_buffer_size * frames_per_pkt, fileAudio);	
+										fwrite(pos, 1,nvoc_buffer_size * nvoc_frames_per_pkt, fileAudio);	
 										if(audio_buffers.buffer_size == 0){
-											audio_buffers.buffer_size = nvoc_buffer_size * frames_per_pkt;
+											audio_buffers.buffer_size = nvoc_buffer_size * nvoc_frames_per_pkt;
 										}
 										audio_buffer = (char *)malloc(1*audio_buffers.buffer_size);
 										memmove(audio_buffer,pos,audio_buffers.buffer_size);
@@ -1397,9 +1604,9 @@ void *decode(void *argv)
 												LOGI("seq:%d\t audio_buffers.size:%d",audio_buffers.seq[0],audio_buffers.size);
 												if(audio_buffers.seq[0] != 0){
 													pollAudioBuffer(&audio_buffers,&audio_buffer);
-													for(int i = 0; i < frames_per_pkt; i++){
+													for(int i = 0; i < nvoc_frames_per_pkt; i++){
 														if(info_str->fec == 1){
-															for(bit_index = 0; bit_index < FEC_DECODE_BUFFER_SIZE; bit_index = bit_index + 8)
+															for(bit_index = 0; bit_index < NVOC_FEC_DECODE_BUFFER_SIZE; bit_index = bit_index + 8)
 															{
 																fec_dec_buffer[bit_index + 0] = ((0x80 & *((u_char *)audio_buffer + bit_index / 8 + i * nvoc_buffer_size)) !=  0) ?  1 : 0;
 																fec_dec_buffer[bit_index + 1] = ((0x40 & *((u_char *)audio_buffer + bit_index / 8 + i * nvoc_buffer_size)) !=  0) ?  1 : 0;
@@ -1413,17 +1620,16 @@ void *decode(void *argv)
 																//fec_dec_buffer[bit_index + 4],fec_dec_buffer[bit_index + 5],fec_dec_buffer[bit_index + 6],fec_dec_buffer[bit_index + 7]);
 															}
 															chan_state = NVOC_FecDecoder(fec_dec_buffer, voc_dec_buffer);
-															NVOC_VoDecoder(frame_buffer, voc_dec_buffer, pcm_dec_buffer + i * FRAME_SIZE, info_str->max_kbps, chan_state, &tone_dtmf);
+															NVOC_VoDecoder(frame_buffer, voc_dec_buffer, pcm_dec_buffer + i * SAMPLE_SIZE, info_str->max_kbps == 2.4f ? 0 : 1, chan_state, &tone_dtmf);
 														}
 														else{
-															memmove(voc_dec_buffer, audio_buffer, audio_buffers.buffer_size);
-															NVOC_VoDecoder(frame_buffer, voc_dec_buffer, pcm_dec_buffer + i * FRAME_SIZE, info_str->max_kbps, chan_state, &tone_dtmf);
+															memmove(voc_dec_buffer, audio_buffer + i * nvoc_buffer_size, nvoc_buffer_size);
+															NVOC_VoDecoder(frame_buffer, voc_dec_buffer, pcm_dec_buffer + i * SAMPLE_SIZE, info_str->max_kbps == 2.4f ? 0 : 1, chan_state, &tone_dtmf);
 														}
 													}
-													//fwrite(pcm_dec_buffer, sizeof(short int), FRAME_SIZE * frames_per_pkt, filePCM);//Write PCM	
 													
-													for(int i = 0; i < frames_per_pkt; i++){
-														pcm_buffers.buffer_size = sizeof(short int) * FRAME_SIZE;
+													for(int i = 0; i < nvoc_samples_per_pkt; i++){
+														pcm_buffers.buffer_size = sizeof(short int) * SAMPLE_SIZE;
 														pcm_buffer=(u_char *)malloc(1*pcm_buffers.buffer_size);
 														memmove(pcm_buffer,pcm_dec_buffer + pcm_buffers.buffer_size * i / sizeof(short int),pcm_buffers.buffer_size);
 														fwrite(pcm_buffer, 1, pcm_buffers.buffer_size, filePCM);
@@ -1443,31 +1649,138 @@ void *decode(void *argv)
 														}
 														//##########################################													
 													}
-													
-													// pcm_buffers.buffer_size = sizeof(short int) * FRAME_SIZE * frames_per_pkt;
-													// pcm_buffer=(u_char *)malloc(1*pcm_buffers.buffer_size);
-													// memmove(pcm_buffer,pcm_dec_buffer,pcm_buffers.buffer_size);
-													// pcm_index++;
-													// LOGI("pcm_index:%5d\t packet size:%d  %d",pcm_index,pcm_buffers.buffer_size,pcm_buffers.size);
-													// //################获取mutex#################
-													// if(parse_method_type == 1 && 0 != pthread_mutex_lock(&mutex)){
-														// returnValue = -9;
-														// return &returnValue;
-													// }	
-													// //##########################################
-													// putPCMBuffer(&pcm_buffers, pcm_buffer);
-													// //################释放mutex#################
-													// if(parse_method_type == 1 && 0 != pthread_mutex_unlock(&mutex)){
-														// returnValue = -10;
-														// return &returnValue;
-													// }
-													// //##########################################	
 													free(audio_buffer);	
 												}
 												else{
 													LOGI("pkt loss: %d", audio_buffers.seq[1]);
 													pollAudioBuffer(&audio_buffers,&audio_buffer);
-													for(int i = 0; i < frames_per_pkt; i++){
+													for(int i = 0; i < nvoc_samples_per_pkt; i++){
+														pcm_buffer=(u_char *)malloc(1*pcm_buffers.buffer_size);
+														memset(pcm_buffer, 0, 1*pcm_buffers.buffer_size);
+														fwrite(pcm_buffer, 1, pcm_buffers.buffer_size, filePCM);//Write PCM	
+														pcm_index++;
+														LOGI("loss pcm_index:%5d\t packet size:%d  %d",pcm_index,pcm_buffers.buffer_size,pcm_buffers.size);
+														//################获取mutex#################
+														if(parse_method_type == 1 && 0 != pthread_mutex_lock(&mutex)){
+															returnValue = -9;
+															return &returnValue;
+														}	
+														//##########################################
+														putPCMBuffer(&pcm_buffers, pcm_buffer);
+														//################释放mutex#################
+														if(parse_method_type == 1 && 0 != pthread_mutex_unlock(&mutex)){
+															returnValue = -10;
+															return &returnValue;
+														}
+														//##########################################	
+													}												
+												}
+											}
+											//--------------------------------------------------------------------------------------------------------------
+										}
+									}
+								}
+							}
+							if(rtp_hdr->payload_type == info_str->type_num && !strcmp(info_str->a_line,"ACELP")){//RTP负载为ACELP
+								if(switchUint32(rtp_hdr->ssrc) == info_str->ssrc && switchUint32(ip_hdr->ip_source) == info_str->ip_src 
+								&& switchUint32(ip_hdr->ip_dest) == info_str->ip_dst){//该ACELP包来自同一同步信源
+									if(rtp_seq == 0){
+										rtp_seq = switchUshort(rtp_hdr->seq);
+										
+										acelpHandle.libAcelp = dlopen("libacelpEncDec.so", RTLD_NOW);
+										if(acelpHandle.libAcelp != NULL) {
+											LOGE("success dlopen libAcelp!!!");
+											acelpHandle.InitPreProcess = dlsym(acelpHandle.libAcelp, "_Z16Init_Pre_Processv");
+											acelpHandle.InitCoderTetra = dlsym(acelpHandle.libAcelp, "_Z16Init_Coder_Tetrav");
+											acelpHandle.InitDecoderTetra = dlsym(acelpHandle.libAcelp, "_Z16Init_Decod_Tetrav");
+											acelpHandle.CoderTetra =  dlsym(acelpHandle.libAcelp, "_Z11Coder_TetraPssS_S_");
+											acelpHandle.PostProcess = dlsym(acelpHandle.libAcelp, "_Z12Post_ProcessPss");
+											acelpHandle.Prm2bitsTetra = dlsym(acelpHandle.libAcelp, "_Z14Prm2bits_TetraPsS_"); 
+											acelpHandle.Bit2prmTetra =  dlsym(acelpHandle.libAcelp, "_Z14Bits2prm_TetraPsS_");
+											acelpHandle.DecodTetra =  dlsym(acelpHandle.libAcelp, "_Z11Decod_TetraPsS_");
+											acelpHandle.getNew_speech =  dlsym(acelpHandle.libAcelp, "_Z13getNew_speechv");
+										}else{
+											LOGE("failed dlopen libAcelp!!!");
+										}
+										
+										acelpHandle.InitPreProcess();
+										acelpHandle.InitCoderTetra();
+										acelpHandle.InitDecoderTetra();
+										LOGE("acelpHandle Init!!!");
+									}else{
+										rtp_seq++;
+									}
+								
+									if(parse_method_type == 2){
+										LOGI("rtp payload length:%d", switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr));
+										fwrite(pos, 1,switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr), fileAudio);
+									}else{
+										acelp_buffer_size = ACELP_FRAME_SIZE;
+										if(switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr) < acelp_buffer_size * acelp_frames_per_pkt){
+											LOGI("rtp payload is to short!!!rtp payload len:%d\t acelp_buffer_size :%d\t frame_index:%d", switchUshort(udp_hdr->length) - 8 - (int)((void*)pos - (void*)rtp_hdr), acelp_buffer_size * acelp_frames_per_pkt,frame_index);
+											//pos 指向下一个pcap 包头的地址
+											pos += len_pkt_left;
+											continue;
+										}
+										
+										fwrite(pos+acelp_frame_first_padding, 1,acelp_buffer_size * acelp_frames_per_pkt, fileAudio);	
+										if(audio_buffers.buffer_size == 0){
+											audio_buffers.buffer_size = acelp_buffer_size * acelp_frames_per_pkt;
+										}
+										audio_buffer = (char *)malloc(1*audio_buffers.buffer_size);
+										memmove(audio_buffer,pos+acelp_frame_first_padding,audio_buffers.buffer_size);
+										setAudioBuffer(&audio_buffers,audio_buffer,switchUshort(rtp_hdr->seq));
+										audio_index++;
+										LOGI("audio_buffers.size:%5d\t audio_index:%5d\t pkt_count:%5d",audio_buffers.size,audio_index,info_str->pkt_count);
+
+										if(audio_buffers.size >= 20 || audio_index >= info_str->pkt_count){
+											//--------------------------------------------------------------------------------------------------------------
+											while(audio_buffers.size > 10 || (audio_buffers.size > 0 && audio_index >= info_str->pkt_count)){
+												LOGI("seq:%d\t audio_buffers.size:%d",audio_buffers.seq[0],audio_buffers.size);
+												if(audio_buffers.seq[0] != 0){
+													pollAudioBuffer(&audio_buffers,&audio_buffer);
+													LOGE("%x %x %x %x %x %x %x %x",audio_buffer[0],audio_buffer[1],audio_buffer[2],audio_buffer[3],audio_buffer[4],audio_buffer[5],audio_buffer[6],audio_buffer[7],audio_buffer[8]);
+													for(int i = 0; i < acelp_frames_per_pkt; i++){
+														// LOGE("h26376 acelp_frames_per_pkt = %d i = %d",acelp_frames_per_pkt,i);
+														memset(acelp_bit_buf, 0, ACELP_BIT_SIZE);
+														byte_to_bit(audio_buffer + i * acelp_buffer_size, acelp_bit_buf + 1);
+														for(int j = 0; j < ACELP_INPUT_SIZE; j++) {
+															acelp_input_buf[j] = acelp_bit_buf[j];
+														}
+														// memmove(acelp_input_buf, acelp_bit_buf, ACELP_INPUT_SIZE);
+														acelpHandle.Bit2prmTetra((short *)acelp_input_buf, acelp_parm);
+														acelpHandle.DecodTetra(acelp_parm, acelp_pcm_buf + i * SAMPLE_SIZE / PERIOD_TIME * ACELP_PTIME_PER_PKT);
+														acelpHandle.PostProcess(acelp_pcm_buf + i * SAMPLE_SIZE / PERIOD_TIME * ACELP_PTIME_PER_PKT, SAMPLE_SIZE / PERIOD_TIME * ACELP_PTIME_PER_PKT);
+													}
+													
+													for(int i = 0; i < acelp_samples_per_pkt; i++){
+														// LOGI("h26376 acelp_samples_per_pkt = %d i = %d",acelp_samples_per_pkt,i);
+														pcm_buffers.buffer_size = sizeof(short int) * SAMPLE_SIZE;
+														pcm_buffer=(u_char *)malloc(1*pcm_buffers.buffer_size);
+														memmove(pcm_buffer,acelp_pcm_buf + pcm_buffers.buffer_size * i / sizeof(short int),pcm_buffers.buffer_size);
+														fwrite(pcm_buffer, 1, pcm_buffers.buffer_size, filePCM);
+														pcm_index++;
+														LOGI("pcm_index:%5d\t packet size:%d  %d",pcm_index,pcm_buffers.buffer_size,pcm_buffers.size);
+														//################获取mutex#################
+														if(parse_method_type == 1 && 0 != pthread_mutex_lock(&mutex)){
+															returnValue = -9;
+															return &returnValue;
+														}	
+														//##########################################
+														putPCMBuffer(&pcm_buffers, pcm_buffer);
+														//################释放mutex#################
+														if(parse_method_type == 1 && 0 != pthread_mutex_unlock(&mutex)){
+															returnValue = -10;
+															return &returnValue;
+														}
+														//##########################################													
+													}
+													free(audio_buffer);	
+												}
+												else{
+													LOGI("pkt loss: %d", audio_buffers.seq[1]);
+													pollAudioBuffer(&audio_buffers,&audio_buffer);
+													for(int i = 0; i < acelp_frames_per_pkt; i++){
 														pcm_buffer=(u_char *)malloc(1*pcm_buffers.buffer_size);
 														memset(pcm_buffer, 0, 1*pcm_buffers.buffer_size);
 														fwrite(pcm_buffer, 1, pcm_buffers.buffer_size, filePCM);//Write PCM	
@@ -1544,7 +1857,6 @@ void *decode(void *argv)
 	}
 	fclose(filePCAP);
 	fclose(fileAudio);
-	free(pcm_dec_buffer);
 	free(pcap_file_header);
 	free(pcap_buffer);
 	if(!strcmp(info_str->a_line,"AMR")){
@@ -1588,7 +1900,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_play(J
 	jfieldID fieldID_type_num = (*env)->GetFieldID(env, class_audio, "type_num", "I");
 	jfieldID fieldID_a_line = (*env)->GetFieldID(env, class_audio, "a_line", "Ljava/lang/String;");
 	jfieldID fieldID_pkt_count = (*env)->GetFieldID(env, class_audio, "pkt_count", "I");
-	jfieldID fieldID_max_kbps = (*env)->GetFieldID(env, class_audio, "max_kbps", "I");
+	jfieldID fieldID_max_kbps = (*env)->GetFieldID(env, class_audio, "max_kbps", "F");
 	jfieldID fieldID_fec = (*env)->GetFieldID(env, class_audio, "fec", "I");
 	jfieldID fieldID_ptime = (*env)->GetFieldID(env, class_audio, "ptime", "I");
 	
@@ -1602,7 +1914,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_play(J
     int type_num = (*env)->GetIntField(env, object_audioInfo, fieldID_type_num);
 	sprintf(a_line,"%s",(*env)->GetStringUTFChars(env,(*env)->GetObjectField(env, object_audioInfo, fieldID_a_line), NULL));
 	int pkt_count = (*env)->GetIntField(env, object_audioInfo, fieldID_pkt_count);
-	int max_kbps = (*env)->GetIntField(env, object_audioInfo, fieldID_max_kbps);
+	float max_kbps = (*env)->GetFloatField(env, object_audioInfo, fieldID_max_kbps);
 	int fec = (*env)->GetIntField(env, object_audioInfo, fieldID_fec);
 	int ptime = (*env)->GetIntField(env, object_audioInfo, fieldID_ptime);
 	sprintf(pcap_str,"%s",(*env)->GetStringUTFChars(env,pcap_jstr, NULL));
@@ -1617,7 +1929,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_play(J
 	LOGI("Cpp type_num:%d",type_num);
 	LOGI("Cpp a_line:%s",a_line);
 	LOGI("Cpp pkt_count:%d",pkt_count);
-	LOGI("Cpp max_kbps:%d",max_kbps);
+	LOGI("Cpp max_kbps:%f",max_kbps);
 	LOGI("Cpp fec:%d",fec);
 	LOGI("Cpp ptime:%d",ptime);
 
@@ -1650,7 +1962,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_play(J
 		usleep(10000);
 	}while(pcm_buffers.size < 10 && returnValue == 1);
 
-    OPENSL_STREAM* stream = android_OpenAudioDevice(SAMPLERATE, CHANNELS, CHANNELS, FRAME_SIZE);
+    OPENSL_STREAM* stream = android_OpenAudioDevice(SAMPLERATE, CHANNELS, CHANNELS, SAMPLE_SIZE);
     if (stream == NULL) {
         LOGE("failed to open audio device ! \n");
         return -1;
@@ -1729,7 +2041,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_decode
 	jfieldID fieldID_type_num = (*env)->GetFieldID(env, class_audio, "type_num", "I");
 	jfieldID fieldID_a_line = (*env)->GetFieldID(env, class_audio, "a_line", "Ljava/lang/String;");
 	jfieldID fieldID_pkt_count = (*env)->GetFieldID(env, class_audio, "pkt_count", "I");
-	jfieldID fieldID_max_kbps = (*env)->GetFieldID(env, class_audio, "max_kbps", "I");
+	jfieldID fieldID_max_kbps = (*env)->GetFieldID(env, class_audio, "max_kbps", "F");
 	jfieldID fieldID_fec = (*env)->GetFieldID(env, class_audio, "fec", "I");
 	jfieldID fieldID_ptime = (*env)->GetFieldID(env, class_audio, "ptime", "I");
 	
@@ -1743,7 +2055,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_decode
     int type_num = (*env)->GetIntField(env, object_audioInfo, fieldID_type_num);
 	sprintf(a_line,"%s",(*env)->GetStringUTFChars(env,(*env)->GetObjectField(env, object_audioInfo, fieldID_a_line), NULL));
 	int pkt_count = (*env)->GetIntField(env, object_audioInfo, fieldID_pkt_count);
-	int max_kbps = (*env)->GetIntField(env, object_audioInfo, fieldID_max_kbps);
+	float max_kbps = (*env)->GetFloatField(env, object_audioInfo, fieldID_max_kbps);
 	int fec = (*env)->GetIntField(env, object_audioInfo, fieldID_fec);
 	int ptime = (*env)->GetIntField(env, object_audioInfo, fieldID_ptime);
 	sprintf(pcap_str,"%s",(*env)->GetStringUTFChars(env,pcap_jstr, NULL));
@@ -1758,7 +2070,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_decode
 	LOGI("Cpp type_num:%d",type_num);
 	LOGI("Cpp a_line:%s",a_line);
 	LOGI("Cpp pkt_count:%d",pkt_count);
-	LOGI("Cpp max_kbps:%d",max_kbps);
+	LOGI("Cpp max_kbps:%f",max_kbps);
 	LOGI("Cpp fec:%d",fec);
 	LOGI("Cpp ptime:%d",ptime);
 
@@ -1818,7 +2130,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_getPay
 	jfieldID fieldID_type_num = (*env)->GetFieldID(env, class_audio, "type_num", "I");
 	jfieldID fieldID_a_line = (*env)->GetFieldID(env, class_audio, "a_line", "Ljava/lang/String;");
 	jfieldID fieldID_pkt_count = (*env)->GetFieldID(env, class_audio, "pkt_count", "I");
-	jfieldID fieldID_max_kbps = (*env)->GetFieldID(env, class_audio, "max_kbps", "I");
+	jfieldID fieldID_max_kbps = (*env)->GetFieldID(env, class_audio, "max_kbps", "F");
 	jfieldID fieldID_fec = (*env)->GetFieldID(env, class_audio, "fec", "I");
 	jfieldID fieldID_ptime = (*env)->GetFieldID(env, class_audio, "ptime", "I");
 	
@@ -1832,7 +2144,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_getPay
     int type_num = (*env)->GetIntField(env, object_audioInfo, fieldID_type_num);
 	sprintf(a_line,"%s",(*env)->GetStringUTFChars(env,(*env)->GetObjectField(env, object_audioInfo, fieldID_a_line), NULL));
 	int pkt_count = (*env)->GetIntField(env, object_audioInfo, fieldID_pkt_count);
-	int max_kbps = (*env)->GetIntField(env, object_audioInfo, fieldID_max_kbps);
+	float max_kbps = (*env)->GetFloatField(env, object_audioInfo, fieldID_max_kbps);
 	int fec = (*env)->GetIntField(env, object_audioInfo, fieldID_fec);
 	int ptime = (*env)->GetIntField(env, object_audioInfo, fieldID_ptime);
 	sprintf(pcap_str,"%s",(*env)->GetStringUTFChars(env,pcap_jstr, NULL));
@@ -1847,7 +2159,7 @@ JNIEXPORT jint JNICALL Java_com_example_pcapdecoder_activity_MainActivity_getPay
 	LOGI("Cpp type_num:%d",type_num);
 	LOGI("Cpp a_line:%s",a_line);
 	LOGI("Cpp pkt_count:%d",pkt_count);
-	LOGI("Cpp max_kbps:%d",max_kbps);
+	LOGI("Cpp max_kbps:%f",max_kbps);
 	LOGI("Cpp fec:%d",fec);
 	LOGI("Cpp ptime:%d",ptime);
 

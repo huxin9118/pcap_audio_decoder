@@ -204,4 +204,98 @@
 				android:textSize="14sp"/>
 		</RadioGroup>
 	</LinearLayout>
+
+	<TextView
+		android:layout_width="wrap_content"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="15dp"
+		android:layout_marginLeft="20dp"
+		android:layout_marginBottom="3dp"
+		android:text="ACELP Setting"
+		android:background="@color/listItem_white"/>
+
+	<LinearLayout
+		android:layout_width="wrap_content"
+		android:layout_height="wrap_content"
+		android:orientation="vertical"
+		android:paddingLeft="10dp"
+		android:paddingRight="10dp"
+		android:layout_marginLeft="20dp"
+		android:layout_marginRight="20dp"
+		android:background="@drawable/shape_url">
+		<LinearLayout
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:gravity="center_vertical">
+			<TextView
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="10"
+				android:text="payload type"
+				android:textSize="14sp"
+				android:textColor="@color/customBlue"/>
+
+			<EditText
+				android:id="@+id/acelp_type_num"
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="5"
+				android:text="93"
+				android:inputType="number"
+				android:minHeight="45dp"
+				android:textSize="14sp" />
+
+			<View
+				android:layout_width="0px"
+				android:layout_height="0px"
+				android:layout_weight="3"/>
+
+			<TextView
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="5"
+				android:text="ptime"
+				android:textSize="14sp"
+				android:textColor="@color/customBlue"/>
+			<EditText
+				android:id="@+id/acelp_ptime"
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="5"
+				android:text="60"
+				android:inputType="number"
+				android:minHeight="45dp"
+				android:textSize="14sp" />
+		</LinearLayout>
+
+		<LinearLayout
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:gravity="center_vertical">
+			<TextView
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="10"
+				android:text="max-kbps"
+				android:textSize="14sp"
+				android:textColor="@color/customBlue"/>
+
+			<EditText
+				android:id="@+id/acelp_max_kbps"
+				android:layout_width="0px"
+				android:layout_height="wrap_content"
+				android:layout_weight="5"
+				android:text="9.2"
+				android:inputType="number"
+				android:minHeight="45dp"
+				android:textSize="14sp" />
+
+			<View
+				android:layout_width="0px"
+				android:layout_height="0px"
+				android:layout_weight="13"/>
+
+		</LinearLayout>
+
+	</LinearLayout>
 </LinearLayout>

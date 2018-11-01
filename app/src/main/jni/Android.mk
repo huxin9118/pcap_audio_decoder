@@ -22,6 +22,17 @@ LOCAL_MODULE := nvoc
 LOCAL_SRC_FILES := libnvoc.so
 include $(PREBUILT_SHARED_LIBRARY)
 
+###########################
+#
+# acelp shared library
+#
+###########################
+# libacelpEncDec library
+include $(CLEAR_VARS)
+LOCAL_MODULE := libacelpEncDec
+LOCAL_SRC_FILES := libacelpEncDec.so
+include $(PREBUILT_SHARED_LIBRARY)
+
 include $(CLEAR_VARS)
 LOCAL_MODULE := native_audio
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/include
@@ -33,7 +44,7 @@ include $(BUILD_SHARED_LIBRARY)
 #include $(CLEAR_VARS)
 #LOCAL_MODULE := native_nvoc
 #LOCAL_C_INCLUDES := $(LOCAL_PATH)/include
-#LOCAL_SRC_FILES := native_nvoc.c
+#LOCAL_SRC_FILES := native_nvoc_test.c
 #LOCAL_SHARED_LIBRARIES := nvoc
 #LOCAL_LDLIBS := -llog
 #include $(BUILD_SHARED_LIBRARY)

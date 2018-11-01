@@ -135,9 +135,9 @@ typedef struct audio_info{
 	u_int32 ip_dst;
 	u_int32 ssrc;
 	int type_num;
-	char a_line[5];
+	char a_line[10];
 	int pkt_count;
-	int max_kbps;
+	float max_kbps;
 	int fec;
 	int ptime;
 } AUDIO_INFO;

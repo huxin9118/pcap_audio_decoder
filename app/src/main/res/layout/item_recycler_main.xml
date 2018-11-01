@@ -7,11 +7,11 @@
 
     <android.support.v7.widget.CardView
         android:id="@+id/img"
-        android:layout_width="32dp"
-        android:layout_height="32dp"
+        android:layout_width="34dp"
+        android:layout_height="34dp"
         android:layout_centerVertical="true"
         android:layout_marginLeft="5dp"
-        android:layout_marginRight="10dp"
+        android:layout_marginRight="5dp"
         app:cardBackgroundColor="@color/customBlue"
         app:cardCornerRadius="16dp">
         <RelativeLayout
@@ -22,7 +22,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_centerInParent="true"
-                android:maxLength="4"
+                android:maxLength="10"
                 android:text="AMR"
                 android:textSize="10sp"
                 android:textColor="@android:color/white"/>

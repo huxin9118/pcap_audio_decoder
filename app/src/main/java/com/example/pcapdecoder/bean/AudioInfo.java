@@ -11,7 +11,7 @@ public class AudioInfo {
     private int type_num;
     private int pkt_count;
     private String a_line;
-    private int max_kbps;
+    private float max_kbps;
     private int fec;
     private int ptime;
 
@@ -39,7 +39,7 @@ public class AudioInfo {
         return pkt_count;
     }
 
-    public int getMax_kbps() {
+    public float getMax_kbps() {
         return max_kbps;
     }
 
@@ -55,7 +55,7 @@ public class AudioInfo {
         this.type_num = type_num;
     }
 
-    public void setMax_kbps(int max_kbps) {
+    public void setMax_kbps(float max_kbps) {
         this.max_kbps = max_kbps;
     }
 
